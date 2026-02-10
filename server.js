@@ -40,6 +40,7 @@ app.get('/api/inventory', (req, res) => {
     else if (sort === 'qty-asc') orderBy = 'ORDER BY qty ASC';
     else if (sort === 'qty-desc') orderBy = 'ORDER BY qty DESC';
     else if (sort === 'color-asc') orderBy = 'ORDER BY color ASC';
+    else if (sort === 'updated-desc') orderBy = 'ORDER BY updated_at DESC NULLS LAST';
 
     // Pagination
     const pageNum = parseInt(page) || 1;
@@ -90,11 +91,11 @@ app.get('/api/brands', (req, res) => {
 app.post('/api/inventory', (req, res) => {
   const db = getDb();
   try {
-    const { name, color, qty } = req.body;
+    const { name, color, qty, brand: inputBrand } = req.body;
     if (!name || !color) {
       return res.status(400).json({ error: '상품명과 컬러는 필수입니다.' });
     }
-    const brand = extractBrand(name);
+    const brand = inputBrand || extractBrand(name);
     const result = db.prepare(
       'INSERT INTO inventory (name, color, qty, brand) VALUES (?, ?, ?, ?)'
     ).run(name.trim(), color.trim(), Math.max(0, parseInt(qty) || 0), brand);
