@@ -55,14 +55,14 @@ CREATE TABLE inventory (
 | GET | /api/inventory | 재고 목록 (search, brand, sort, page, limit 파라미터) |
 | GET | /api/stats | 통계 (totalItems, totalQty, brands, outOfStock) |
 | GET | /api/brands | 브랜드 목록 |
-| POST | /api/inventory | 재고 추가 (body: name, color, qty) |
+| POST | /api/inventory | 재고 추가 (body: name, color, qty, brand?) |
 | PUT | /api/inventory/:id | 수량 수정 (body: qty) → updated_at 자동 갱신 |
 | DELETE | /api/inventory/:id | 단건 삭제 |
 | POST | /api/inventory/delete-bulk | 일괄 삭제 (body: ids[]) |
 
 ## 프론트엔드 기능
-- **재고 조회**: 30개씩 페이지네이션, 상품명/컬러 검색, 브랜드 필터, 6종 정렬
-- **재고 추가**: 모달로 상품명/컬러/수량 입력
+- **재고 조회**: 30개씩 페이지네이션, 상품명/컬러 검색, 브랜드 필터, 7종 정렬 (최근 수정순 포함)
+- **재고 추가**: 모달에서 브랜드 선택(기존 목록 or 직접 입력) + 상품명/컬러/수량 입력 → "브랜드 상품명" 형태로 저장
 - **수량 변경**: +/- 버튼 또는 숫자 클릭→직접 입력, DB 즉시 반영
 - **재고 삭제**: 개별 X 버튼 또는 체크박스 선택 후 일괄 삭제 (확인 모달)
 - **새로고침**: 버튼 클릭 → 회전 애니메이션 + 마지막 갱신 시간 표시
