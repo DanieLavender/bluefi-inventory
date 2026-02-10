@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: bluepie-inventory
+    name: bluefi-inventory
     runtime: node
     buildCommand: npm install
     startCommand: node server.js

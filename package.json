@@ -1,5 +1,5 @@
 {
-  "name": "bluepie-inventory",
+  "name": "bluefi-inventory",
   "version": "1.0.0",
   "description": "블루파이 재고관리 시스템",
   "main": "server.js",
