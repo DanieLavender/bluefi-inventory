@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>블루파이 재고관리</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+            background: #f0f2f5;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a73e8, #0d47a1);
+            color: white;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .header h1 { font-size: 24px; font-weight: 600; }
+        .header .date { font-size: 14px; opacity: 0.85; }
+        .stats {
+            display: flex;
+            gap: 20px;
+            padding: 20px 40px;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px 28px;
+            flex: 1;
+            min-width: 180px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .stat-card .label { font-size: 13px; color: #888; margin-bottom: 6px; }
+        .stat-card .value { font-size: 28px; font-weight: 700; color: #1a73e8; }
+        .controls {
+            padding: 0 40px 20px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+            position: relative;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 12px 16px 12px 42px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .search-box input:focus { border-color: #1a73e8; }
+        .search-box::before {
+            content: '\1F50D';
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 16px;
+        }
+        .filter-select {
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            background: white;
+            cursor: pointer;
+            min-width: 140px;
+        }
+        .filter-select:focus { border-color: #1a73e8; }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #1a73e8; color: white; }
+        .btn-primary:hover { background: #1557b0; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #b02a37; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-success:hover { background: #1e7e34; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #565e64; }
+        .btn-sm { padding: 6px 14px; font-size: 13px; border-radius: 6px; }
+        .table-container { padding: 0 40px 40px; }
+        .table-wrap {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        thead th {
+            background: #f8f9fa;
+            padding: 14px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+            border-bottom: 2px solid #e9ecef;
+            position: sticky;
+            top: 0;
+        }
+        tbody tr { transition: background 0.15s; }
+        tbody tr:hover { background: #f0f7ff; }
+        tbody td {
+            padding: 12px 16px;
+            font-size: 14px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .no-col { color: #999; font-size: 13px; width: 60px; }
+        .qty-col { font-weight: 600; }
+        .qty-zero { color: #dc3545; }
+        .brand-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: white;
+            min-width: 28px;
+            text-align: center;
+        }
+        .checkbox-col { width: 40px; text-align: center; }
+        .checkbox-col input { width: 16px; height: 16px; cursor: pointer; }
+        .action-col { width: 80px; text-align: center; }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            width: 480px;
+            max-width: 90vw;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal h2 { margin-bottom: 24px; font-size: 20px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 6px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: #1a73e8; }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+        .bulk-actions {
+            padding: 10px 40px;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            background: #fff3cd;
+            border-bottom: 1px solid #ffc107;
+        }
+        .bulk-actions.active { display: flex; }
+        .bulk-actions span { font-size: 14px; font-weight: 600; }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            padding: 20px;
+        }
+        .pagination button {
+            padding: 8px 14px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .pagination button:hover { background: #e9ecef; }
+        .pagination button.active {
+            background: #1a73e8;
+            color: white;
+            border-color: #1a73e8;
+        }
+        .pagination button:disabled { opacity: 0.5; cursor: default; }
+        .page-info { font-size: 13px; color: #666; }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+        .edit-qty {
+            width: 60px;
+            padding: 4px 8px;
+            border: 2px solid #1a73e8;
+            border-radius: 6px;
+            font-size: 14px;
+            text-align: center;
+            outline: none;
+        }
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            padding: 14px 24px;
+            border-radius: 10px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s;
+            z-index: 2000;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast-success { background: #28a745; }
+        .toast-error { background: #dc3545; }
+        .toast-info { background: #1a73e8; }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+            font-size: 15px;
+        }
+        @media (max-width: 768px) {
+            .header { padding: 16px 20px; }
+            .stats { padding: 16px 20px; }
+            .controls { padding: 0 20px 16px; }
+            .table-container { padding: 0 20px 20px; }
+            .bulk-actions { padding: 10px 20px; }
+            .stat-card { min-width: 140px; padding: 14px 18px; }
+            .stat-card .value { font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>블루파이 재고관리</h1>
+            <div class="date">실시간 재고관리 시스템</div>
+        </div>
+        <button class="btn btn-success" onclick="openAddModal()">+ 재고 추가</button>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="label">총 상품 종류</div>
+            <div class="value" id="statTotal">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">총 재고 수량</div>
+            <div class="value" id="statQty">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">브랜드 수</div>
+            <div class="value" id="statBrands">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">품절 상품</div>
+            <div class="value" id="statOut">-</div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="상품명, 컬러로 검색..." oninput="debounceSearch()">
+        </div>
+        <select class="filter-select" id="brandFilter" onchange="loadData()">
+            <option value="">전체 브랜드</option>
+        </select>
+        <select class="filter-select" id="sortSelect" onchange="loadData()">
+            <option value="id-asc">기본 순서</option>
+            <option value="name-asc">상품명 오름차순</option>
+            <option value="name-desc">상품명 내림차순</option>
+            <option value="qty-asc">수량 적은순</option>
+            <option value="qty-desc">수량 많은순</option>
+            <option value="color-asc">컬러 오름차순</option>
+        </select>
+    </div>
+
+    <div class="bulk-actions" id="bulkActions">
+        <span id="selectedCount">0개 선택됨</span>
+        <button class="btn btn-danger btn-sm" onclick="deleteSelected()">선택 삭제</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearSelection()">선택 해제</button>
+    </div>
+
+    <div class="table-container">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="checkbox-col"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                        <th class="no-col">No.</th>
+                        <th>브랜드</th>
+                        <th>상품명</th>
+                        <th>컬러</th>
+                        <th>수량</th>
+                        <th class="action-col">관리</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr><td colspan="7" class="loading">데이터를 불러오는 중...</td></tr>
+                </tbody>
+            </table>
+            <div id="emptyState" class="empty-state" style="display:none;">
+                <div class="icon">📦</div>
+                <p>검색 결과가 없습니다.</p>
+            </div>
+        </div>
+        <div class="pagination" id="pagination"></div>
+    </div>
+
+    <!-- Add Modal -->
+    <div class="modal-overlay" id="addModal">
+        <div class="modal">
+            <h2>재고 추가</h2>
+            <div class="form-group">
+                <label>상품명 *</label>
+                <input type="text" id="inputName" placeholder="예: hm 캐시미어 울 라운드니트">
+            </div>
+            <div class="form-group">
+                <label>컬러 *</label>
+                <input type="text" id="inputColor" placeholder="예: 아이보리">
+            </div>
+            <div class="form-group">
+                <label>수량 *</label>
+                <input type="number" id="inputQty" min="0" value="1" placeholder="수량 입력">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeAddModal()">취소</button>
+                <button class="btn btn-primary" onclick="submitItem()">추가</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal">
+            <h2>삭제 확인</h2>
+            <p id="confirmMsg" style="margin-bottom:8px;"></p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeConfirm()">취소</button>
+                <button class="btn btn-danger" onclick="confirmDelete()">삭제</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+    const brandColors = {
+        'ag': '#e91e63', 'ed': '#9c27b0', 'hm': '#3f51b5', 'ig': '#00bcd4',
+        'it': '#009688', 'lc': '#4caf50', 'ls': '#8bc34a', 'mo': '#ff9800',
+        'mu': '#ff5722', 'mv': '#795548', 'ov': '#607d8b', 'ps': '#e91e63',
+        'ru': '#673ab7', 'sm': '#2196f3', 've': '#00897b', 'vi': '#d81b60',
+    };
+
+    let currentPage = 1;
+    let totalPages = 1;
+    let totalItems = 0;
+    let currentItems = [];
+    let selectedIds = new Set();
+    let searchTimer = null;
+    let pendingDeleteIds = [];
+
+    // --- API Calls ---
+    async function api(url, options = {}) {
+        const res = await fetch(url, {
+            headers: { 'Content-Type': 'application/json' },
+            ...options
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: '서버 오류' }));
+            throw new Error(err.error || '요청 실패');
+        }
+        return res.json();
+    }
+
+    async function loadStats() {
+        const stats = await api('/api/stats');
+        document.getElementById('statTotal').textContent = stats.totalItems;
+        document.getElementById('statQty').textContent = stats.totalQty;
+        document.getElementById('statBrands').textContent = stats.brands;
+        document.getElementById('statOut').textContent = stats.outOfStock;
+    }
+
+    async function loadBrands() {
+        const brands = await api('/api/brands');
+        const select = document.getElementById('brandFilter');
+        const current = select.value;
+        select.innerHTML = '<option value="">전체 브랜드</option>';
+        brands.forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b;
+            opt.textContent = b.toUpperCase();
+            select.appendChild(opt);
+        });
+        select.value = current;
+    }
+
+    async function loadData() {
+        const search = document.getElementById('searchInput').value.trim();
+        const brand = document.getElementById('brandFilter').value;
+        const sort = document.getElementById('sortSelect').value;
+
+        const params = new URLSearchParams();
+        if (search) params.set('search', search);
+        if (brand) params.set('brand', brand);
+        if (sort) params.set('sort', sort);
+        params.set('page', currentPage);
+        params.set('limit', 30);
+
+        try {
+            const data = await api(`/api/inventory?${params}`);
+            currentItems = data.items;
+            totalPages = data.totalPages;
+            totalItems = data.total;
+            render();
+        } catch (e) {
+            showToast('데이터를 불러올 수 없습니다: ' + e.message, 'error');
+        }
+    }
+
+    function debounceSearch() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+            currentPage = 1;
+            loadData();
+        }, 300);
+    }
+
+    // --- Render ---
+    function render() {
+        const tbody = document.getElementById('tableBody');
+        const emptyState = document.getElementById('emptyState');
+
+        if (currentItems.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.style.display = 'block';
+        } else {
+            emptyState.style.display = 'none';
+            const startIdx = (currentPage - 1) * 30;
+            tbody.innerHTML = currentItems.map((item, idx) => {
+                const num = startIdx + idx + 1;
+                const checked = selectedIds.has(item.id) ? 'checked' : '';
+                const qtyClass = item.qty === 0 ? 'qty-col qty-zero' : 'qty-col';
+                const brandHtml = item.brand
+                    ? `<span class="brand-badge" style="background:${brandColors[item.brand] || '#999'}">${item.brand}</span>`
+                    : '-';
+                return `<tr>
+                    <td class="checkbox-col"><input type="checkbox" ${checked} onchange="toggleSelect(${item.id})"></td>
+                    <td class="no-col">${num}</td>
+                    <td>${brandHtml}</td>
+                    <td>${escapeHtml(item.name)}</td>
+                    <td>${escapeHtml(item.color)}</td>
+                    <td class="${qtyClass}">
+                        <span id="qty-${item.id}" ondblclick="startEditQty(${item.id}, ${item.qty})">${item.qty}</span>
+                    </td>
+                    <td class="action-col">
+                        <button class="btn btn-danger btn-sm" onclick="confirmSingleDelete(${item.id}, '${escapeAttr(item.name)}', '${escapeAttr(item.color)}')" title="삭제">X</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        renderPagination();
+        updateBulkActions();
+        document.getElementById('selectAll').checked = false;
+    }
+
+    function renderPagination() {
+        const div = document.getElementById('pagination');
+        if (totalPages <= 1) { div.innerHTML = ''; return; }
+
+        let html = `<button ${currentPage === 1 ? 'disabled' : ''} onclick="goPage(${currentPage - 1})">&lt;</button>`;
+        let pages = [];
+
+        if (totalPages <= 7) {
+            for (let i = 1; i <= totalPages; i++) pages.push(i);
+        } else {
+            pages.push(1);
+            let s = Math.max(2, currentPage - 2);
+            let e = Math.min(totalPages - 1, currentPage + 2);
+            if (s > 2) pages.push('...');
+            for (let i = s; i <= e; i++) pages.push(i);
+            if (e < totalPages - 1) pages.push('...');
+            pages.push(totalPages);
+        }
+
+        pages.forEach(p => {
+            if (p === '...') html += `<span style="padding:0 4px;">...</span>`;
+            else html += `<button class="${p === currentPage ? 'active' : ''}" onclick="goPage(${p})">${p}</button>`;
+        });
+
+        html += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="goPage(${currentPage + 1})">&gt;</button>`;
+        const start = (currentPage - 1) * 30 + 1;
+        const end = Math.min(currentPage * 30, totalItems);
+        html += `<span class="page-info" style="margin-left:12px;">${totalItems}개 중 ${start}-${end}</span>`;
+        div.innerHTML = html;
+    }
+
+    function goPage(p) {
+        currentPage = p;
+        loadData();
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+
+    function escapeAttr(str) {
+        return (str || '').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
+    // --- Selection ---
+    function toggleSelect(id) {
+        if (selectedIds.has(id)) selectedIds.delete(id);
+        else selectedIds.add(id);
+        updateBulkActions();
+    }
+
+    function toggleSelectAll() {
+        const checked = document.getElementById('selectAll').checked;
+        currentItems.forEach(item => {
+            if (checked) selectedIds.add(item.id);
+            else selectedIds.delete(item.id);
+        });
+        render();
+    }
+
+    function clearSelection() {
+        selectedIds.clear();
+        render();
+    }
+
+    function updateBulkActions() {
+        const bar = document.getElementById('bulkActions');
+        if (selectedIds.size > 0) {
+            bar.classList.add('active');
+            document.getElementById('selectedCount').textContent = `${selectedIds.size}개 선택됨`;
+        } else {
+            bar.classList.remove('active');
+        }
+    }
+
+    // --- Inline Qty Edit ---
+    function startEditQty(id, currentQty) {
+        const span = document.getElementById(`qty-${id}`);
+        if (!span) return;
+        span.innerHTML = `<input type="number" class="edit-qty" value="${currentQty}" min="0"
+            onblur="saveQty(${id}, this.value)"
+            onkeydown="if(event.key==='Enter')this.blur();"
+            autofocus>`;
+        span.querySelector('input').focus();
+    }
+
+    async function saveQty(id, val) {
+        const newQty = Math.max(0, parseInt(val) || 0);
+        try {
+            await api(`/api/inventory/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ qty: newQty })
+            });
+            showToast('수량이 변경되었습니다.', 'success');
+            loadStats();
+            loadData();
+        } catch (e) {
+            showToast('수량 변경 실패: ' + e.message, 'error');
+            loadData();
+        }
+    }
+
+    // --- Add Item ---
+    function openAddModal() {
+        document.getElementById('inputName').value = '';
+        document.getElementById('inputColor').value = '';
+        document.getElementById('inputQty').value = 1;
+        document.getElementById('addModal').classList.add('active');
+        document.getElementById('inputName').focus();
+    }
+
+    function closeAddModal() {
+        document.getElementById('addModal').classList.remove('active');
+    }
+
+    async function submitItem() {
+        const name = document.getElementById('inputName').value.trim();
+        const color = document.getElementById('inputColor').value.trim();
+        const qty = parseInt(document.getElementById('inputQty').value) || 0;
+
+        if (!name) { showToast('상품명을 입력해주세요.', 'error'); return; }
+        if (!color) { showToast('컬러를 입력해주세요.', 'error'); return; }
+
+        try {
+            await api('/api/inventory', {
+                method: 'POST',
+                body: JSON.stringify({ name, color, qty })
+            });
+            closeAddModal();
+            showToast(`"${name}" 이(가) 추가되었습니다.`, 'success');
+            loadStats();
+            loadBrands();
+            // Go to last page
+            currentPage = 999;
+            loadData();
+        } catch (e) {
+            showToast('추가 실패: ' + e.message, 'error');
+        }
+    }
+
+    // --- Delete ---
+    function confirmSingleDelete(id, name, color) {
+        pendingDeleteIds = [id];
+        document.getElementById('confirmMsg').textContent = `"${name} (${color})" 을(를) 삭제하시겠습니까?`;
+        document.getElementById('confirmModal').classList.add('active');
+    }
+
+    function deleteSelected() {
+        if (selectedIds.size === 0) return;
+        pendingDeleteIds = [...selectedIds];
+        document.getElementById('confirmMsg').textContent = `선택한 ${pendingDeleteIds.length}개 항목을 삭제하시겠습니까?`;
+        document.getElementById('confirmModal').classList.add('active');
+    }
+
+    function closeConfirm() {
+        document.getElementById('confirmModal').classList.remove('active');
+        pendingDeleteIds = [];
+    }
+
+    async function confirmDelete() {
+        const count = pendingDeleteIds.length;
+        try {
+            if (count === 1) {
+                await api(`/api/inventory/${pendingDeleteIds[0]}`, { method: 'DELETE' });
+            } else {
+                await api('/api/inventory/delete-bulk', {
+                    method: 'POST',
+                    body: JSON.stringify({ ids: pendingDeleteIds })
+                });
+            }
+            pendingDeleteIds.forEach(id => selectedIds.delete(id));
+            pendingDeleteIds = [];
+            closeConfirm();
+            showToast(`${count}개 항목이 삭제되었습니다.`, 'info');
+            loadStats();
+            loadBrands();
+            loadData();
+        } catch (e) {
+            showToast('삭제 실패: ' + e.message, 'error');
+        }
+    }
+
+    // --- Toast ---
+    function showToast(msg, type = 'info') {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.className = `toast toast-${type} show`;
+        setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    // --- Modal close on overlay ---
+    document.getElementById('addModal').addEventListener('click', function(e) {
+        if (e.target === this) closeAddModal();
+    });
+    document.getElementById('confirmModal').addEventListener('click', function(e) {
+        if (e.target === this) closeConfirm();
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { closeAddModal(); closeConfirm(); }
+    });
+
+    // --- Init ---
+    async function init() {
+        await Promise.all([loadStats(), loadBrands(), loadData()]);
+    }
+    init();
+    </script>
+</body>
+</html>

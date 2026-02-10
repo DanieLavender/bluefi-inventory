@@ -1,0 +1,13 @@
+{
+  "name": "bluepie-inventory",
+  "version": "1.0.0",
+  "description": "블루파이 재고관리 시스템",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "express": "^4.21.0"
+  }
+}
