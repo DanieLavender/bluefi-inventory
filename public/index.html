@@ -1952,7 +1952,7 @@
 
     function formatUpdatedAt(dateStr) {
         if (!dateStr) return '-';
-        const d = new Date(dateStr + 'Z');
+        const d = new Date(dateStr);
         const now = new Date();
         const diff = now - d;
         const mins = Math.floor(diff / 60000);
