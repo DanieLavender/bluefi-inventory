@@ -248,56 +248,34 @@ app.get('/api/sales/recent', async (req, res) => {
   }
 });
 
-// GET /api/sales/debug - 주문 API 원본 응답 디버그
+// GET /api/sales/debug - 결제일 기준 주문 조회 디버그
 app.get('/api/sales/debug', async (req, res) => {
   try {
     await initSyncClients();
     const now = new Date();
     const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const types = ['PAYED', 'DELIVERING', 'DELIVERED', 'PURCHASE_DECIDED', 'CANCELED', 'EXCHANGED', 'RETURNED'];
-    const results = {};
 
-    for (const t of types) {
-      try {
-        const params = new URLSearchParams({
-          lastChangedFrom: from.toISOString(),
-          lastChangedTo: now.toISOString(),
-          lastChangedType: t,
-        });
-        const data = await scheduler.storeA.apiCall(
-          'GET',
-          `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
-        );
-        const count = data?.data?.lastChangeStatuses?.length || 0;
-        results[t] = { count, sample: data?.data?.lastChangeStatuses?.slice(0, 2) || [] };
-      } catch (e) {
-        results[t] = { error: e.message };
-      }
+    const details = await scheduler.storeA.getOrdersByPaymentDate(from.toISOString(), now.toISOString());
+    const statusDist = {};
+    for (const d of details) {
+      const s = d.productOrder?.productOrderStatus || '?';
+      statusDist[s] = (statusDist[s] || 0) + 1;
     }
 
-    // 첫 번째 주문 상세도 조회하여 필드 구조 확인
-    const firstId = results.PAYED?.sample?.[0]?.productOrderId;
-    if (firstId) {
-      try {
-        const details = await scheduler.storeA.getProductOrderDetail([firstId]);
-        const detail = details[0];
-        const po = detail?.productOrder || detail;
-        results.detailSample = detail;
-        results.dateFieldAnalysis = {
-          detailKeys: Object.keys(detail || {}),
-          hasProductOrder: !!detail?.productOrder,
-          productOrderKeys: detail?.productOrder ? Object.keys(detail.productOrder) : [],
-          placeOrderDate: po?.placeOrderDate || null,
-          paymentDate: po?.paymentDate || null,
-          orderDate: po?.orderDate || null,
-          poPlaceOrderDate: detail?.productOrder?.placeOrderDate || null,
-        };
-      } catch (e) {
-        results.detailSample = { error: e.message };
-      }
-    }
+    const sample = details[0] ? {
+      detailKeys: Object.keys(details[0]),
+      orderKeys: Object.keys(details[0].order || {}),
+      poStatus: details[0].productOrder?.productOrderStatus,
+      paymentDate: details[0].order?.paymentDate,
+      productName: details[0].productOrder?.productName,
+    } : null;
 
-    res.json({ queryRange: { from: from.toISOString(), to: now.toISOString() }, results });
+    res.json({
+      queryRange: { from: from.toISOString(), to: now.toISOString() },
+      totalCount: details.length,
+      statusDistribution: statusDist,
+      sample,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -343,53 +321,41 @@ app.post('/api/sales/fetch', async (req, res) => {
           const chunkEnd = new Date(Math.min(cursor.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
 
           try {
-            const orderIds = await client.getOrders(cursor.toISOString(), chunkEnd.toISOString());
-            storeFound += orderIds.length;
-            if (orderIds.length > 0) {
-              console.log(`[Sales] Store ${key} ${cursor.toISOString().slice(0,10)}: ${orderIds.length}건 발견`);
+            // 결제일 기준 주문 조회 (상태 무관 — 배송중/구매확정 모두 포함)
+            const details = await client.getOrdersByPaymentDate(cursor.toISOString(), chunkEnd.toISOString());
+            storeFound += details.length;
+            if (details.length > 0) {
+              console.log(`[Sales] Store ${key} ${cursor.toISOString().slice(0,10)}: ${details.length}건 발견`);
             }
 
-            if (orderIds.length > 0) {
-              const batchSize = 50;
-              for (let i = 0; i < orderIds.length; i += batchSize) {
-                const batch = orderIds.slice(i, i + batchSize);
-                const details = await client.getProductOrderDetail(batch);
+            for (const detail of details) {
+              const po = detail.productOrder || detail;
+              const order = detail.order || {};
+              const productOrderId = po.productOrderId || '';
+              const rawDate = order.paymentDate || order.orderDate || po.placeOrderDate || chunkEnd.toISOString();
+              const orderDate = new Date(rawDate).toISOString();
+              const productName = po.productName || '';
+              const optionName = po.optionName || null;
+              const qty = po.quantity || 1;
+              const unitPrice = po.unitPrice || po.salePrice || 0;
+              const totalAmount = po.totalPaymentAmount || po.totalProductAmount || (unitPrice * qty);
+              const status = po.productOrderStatus || '';
+              const channelProductNo = String(po.channelProductNo || po.productId || '');
 
-                for (const detail of details) {
-                  const po = detail.productOrder || detail;
-                  const order = detail.order || {};
-                  const productOrderId = po.productOrderId || '';
-                  const rawDate = order.paymentDate || order.orderDate || po.placeOrderDate || chunkEnd.toISOString();
-                  const orderDate = new Date(rawDate).toISOString();
-                  const productName = po.productName || '';
-                  const optionName = po.optionName || null;
-                  const qty = po.quantity || 1;
-                  const unitPrice = po.unitPrice || po.salePrice || 0;
-                  const totalAmount = po.totalPaymentAmount || po.totalProductAmount || (unitPrice * qty);
-                  const status = po.productOrderStatus || '';
-                  const channelProductNo = String(po.channelProductNo || po.productId || '');
+              // 첫 실행 시 필드 구조 로깅
+              if (storeInserted === 0) {
+                console.log(`[Sales] 결제일 기준 조회 응답 샘플:`, JSON.stringify({ orderKeys: Object.keys(order), poStatus: status, paymentDate: order.paymentDate }).slice(0, 300));
+              }
 
-                  // 첫 실행 시 필드 구조 로깅
-                  if (storeInserted === 0 && i === 0) {
-                    console.log(`[Sales] 날짜 추출: order.paymentDate=${order.paymentDate}, order.orderDate=${order.orderDate}, po.placeOrderDate=${po.placeOrderDate}`);
-                    console.log(`[Sales] 최종 orderDate:`, orderDate);
-                  }
-
-                  try {
-                    await query(
-                      `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                      [key, productOrderId, orderDate, productName, optionName, qty, unitPrice, totalAmount, status, channelProductNo]
-                    );
-                    storeInserted++;
-                  } catch (dbErr) {
-                    // INSERT IGNORE handles duplicates silently
-                  }
-                }
-
-                if (i + batchSize < orderIds.length) {
-                  await new Promise(r => setTimeout(r, 300));
-                }
+              try {
+                await query(
+                  `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [key, productOrderId, orderDate, productName, optionName, qty, unitPrice, totalAmount, status, channelProductNo]
+                );
+                storeInserted++;
+              } catch (dbErr) {
+                // INSERT IGNORE handles duplicates silently
               }
             }
           } catch (chunkErr) {

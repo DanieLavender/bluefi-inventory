@@ -182,60 +182,28 @@ class NaverCommerceClient {
     return data.data;
   }
 
-  // === Orders: Paid order queries ===
+  // === Orders: Payment date based query ===
 
   /**
-   * Get orders in a time range (max 24h per call)
-   * 여러 상태 타입을 조회하여 가능한 모든 주문 수집
+   * 결제일 기준 주문 상세 조회 (max 24h per call)
+   * 상태 변경이 아닌 결제일(불변) 기준이므로 배송중/구매확정 등 모든 주문 포함
    * @param {string} fromDate ISO datetime
    * @param {string} toDate ISO datetime
-   * @returns {Array} product order IDs
+   * @returns {Array} order detail objects (productOrder + order 포함)
    */
-  async getOrders(fromDate, toDate) {
-    // 주문 상태 변경 타입: 결제→배송→구매확정 전체 흐름 커버
-    // (지원하지 않는 타입은 에러 핸들링으로 자동 스킵)
-    const typesToCheck = ['PAYED', 'DELIVERING', 'DELIVERED', 'PURCHASE_DECIDED'];
-    const seen = new Set();
-    const allOrderIds = [];
-    const errors = [];
+  async getOrdersByPaymentDate(fromDate, toDate) {
+    const params = new URLSearchParams({
+      rangeType: 'PAYMENT_DATETIME',
+      from: fromDate,
+      to: toDate,
+    });
 
-    for (const changeType of typesToCheck) {
-      try {
-        const params = new URLSearchParams({
-          lastChangedFrom: fromDate,
-          lastChangedTo: toDate,
-          lastChangedType: changeType,
-        });
+    const data = await this.apiCall(
+      'GET',
+      `/v1/pay-order/seller/product-orders?${params}`
+    );
 
-        const data = await this.apiCall(
-          'GET',
-          `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
-        );
-
-        const statuses = data?.data?.lastChangeStatuses || [];
-        if (statuses.length > 0) {
-          console.log(`[${this.storeName}] ${changeType}: ${statuses.length}건`);
-        }
-
-        for (const s of statuses) {
-          if (!seen.has(s.productOrderId)) {
-            seen.add(s.productOrderId);
-            allOrderIds.push(s.productOrderId);
-          }
-        }
-      } catch (e) {
-        errors.push(e.message);
-        console.log(`[${this.storeName}] ${changeType} 조회 오류:`, e.message);
-      }
-      await this.sleep(300);
-    }
-
-    // 모든 타입이 실패하면 첫 번째 에러를 throw
-    if (errors.length === typesToCheck.length) {
-      throw new Error(errors[0]);
-    }
-
-    return allOrderIds;
+    return data?.data || [];
   }
 
   // === Store B: Product queries and updates ===

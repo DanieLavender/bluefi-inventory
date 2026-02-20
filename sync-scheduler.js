@@ -421,43 +421,34 @@ class SyncScheduler {
           const chunkEnd = new Date(Math.min(cursor.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
 
           try {
-            const orderIds = await client.getOrders(cursor.toISOString(), chunkEnd.toISOString());
+            // 결제일 기준 주문 조회 (상태 무관)
+            const details = await client.getOrdersByPaymentDate(cursor.toISOString(), chunkEnd.toISOString());
 
-            if (orderIds.length > 0) {
-              const batchSize = 50;
-              for (let i = 0; i < orderIds.length; i += batchSize) {
-                const batch = orderIds.slice(i, i + batchSize);
-                const details = await client.getProductOrderDetail(batch);
-
-                for (const detail of details) {
-                  const po = detail.productOrder || detail;
-                  const order = detail.order || {};
-                  const rawDate = order.paymentDate || order.orderDate || po.placeOrderDate || chunkEnd.toISOString();
-                  const orderDate = new Date(rawDate).toISOString();
-                  try {
-                    await query(
-                      `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                      [
-                        key,
-                        po.productOrderId || '',
-                        orderDate,
-                        po.productName || '',
-                        po.optionName || null,
-                        po.quantity || 1,
-                        po.unitPrice || po.salePrice || 0,
-                        po.totalPaymentAmount || po.totalProductAmount || ((po.unitPrice || 0) * (po.quantity || 1)),
-                        po.productOrderStatus || '',
-                        String(po.channelProductNo || po.productId || ''),
-                      ]
-                    );
-                    inserted++;
-                  } catch (dbErr) {
-                    // duplicate ignored
-                  }
-                }
-
-                if (i + batchSize < orderIds.length) await this.sleep(300);
+            for (const detail of details) {
+              const po = detail.productOrder || detail;
+              const order = detail.order || {};
+              const rawDate = order.paymentDate || order.orderDate || po.placeOrderDate || chunkEnd.toISOString();
+              const orderDate = new Date(rawDate).toISOString();
+              try {
+                await query(
+                  `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [
+                    key,
+                    po.productOrderId || '',
+                    orderDate,
+                    po.productName || '',
+                    po.optionName || null,
+                    po.quantity || 1,
+                    po.unitPrice || po.salePrice || 0,
+                    po.totalPaymentAmount || po.totalProductAmount || ((po.unitPrice || 0) * (po.quantity || 1)),
+                    po.productOrderStatus || '',
+                    String(po.channelProductNo || po.productId || ''),
+                  ]
+                );
+                inserted++;
+              } catch (dbErr) {
+                // duplicate ignored
               }
             }
           } catch (chunkErr) {
