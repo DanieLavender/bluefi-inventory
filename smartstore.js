@@ -192,7 +192,9 @@ class NaverCommerceClient {
    * @returns {Array} product order IDs
    */
   async getOrders(fromDate, toDate) {
-    const typesToCheck = ['PAYED', 'PURCHASE_DECIDED'];
+    // 주문 상태 변경 타입: 결제→배송→구매확정 전체 흐름 커버
+    // (지원하지 않는 타입은 에러 핸들링으로 자동 스킵)
+    const typesToCheck = ['PAYED', 'DELIVERING', 'DELIVERED', 'PURCHASE_DECIDED'];
     const seen = new Set();
     const allOrderIds = [];
     const errors = [];
