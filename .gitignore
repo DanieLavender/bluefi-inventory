@@ -2,3 +2,4 @@ node_modules/
 inventory.db
 inventory_data.json
 *.xlsx
+.env

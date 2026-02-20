@@ -1,42 +1,103 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const mysql = require('mysql2/promise');
 
-const DB_PATH = path.join(__dirname, 'inventory.db');
+let pool = null;
 
-function getDb() {
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  return db;
+function getPool() {
+  if (!pool) {
+    pool = mysql.createPool({
+      host: process.env.DB_HOST,
+      port: parseInt(process.env.DB_PORT) || 3306,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      charset: 'utf8mb4',
+      waitForConnections: true,
+      connectionLimit: 10,
+    });
+  }
+  return pool;
 }
 
-function initDb() {
-  const db = getDb();
+async function query(sql, params) {
+  const [result] = await getPool().query(sql, params || []);
+  return result;
+}
 
-  db.exec(`
+async function initDb() {
+  await query(`
     CREATE TABLE IF NOT EXISTS inventory (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INT AUTO_INCREMENT PRIMARY KEY,
       name TEXT NOT NULL,
-      color TEXT NOT NULL,
-      qty INTEGER NOT NULL DEFAULT 0,
-      brand TEXT DEFAULT '',
+      color VARCHAR(255) NOT NULL,
+      qty INT NOT NULL DEFAULT 0,
+      brand VARCHAR(10) DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT NULL
-    )
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
-  // Migrate: add updated_at if missing (for existing DBs)
-  const columns = db.prepare("PRAGMA table_info(inventory)").all();
-  if (!columns.find(c => c.name === 'updated_at')) {
-    db.exec("ALTER TABLE inventory ADD COLUMN updated_at DATETIME DEFAULT NULL");
+  await query(`
+    CREATE TABLE IF NOT EXISTS sync_log (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      run_id VARCHAR(255) NOT NULL,
+      type VARCHAR(50) NOT NULL,
+      store_from VARCHAR(10) NOT NULL,
+      store_to VARCHAR(10) DEFAULT NULL,
+      product_order_id VARCHAR(255) DEFAULT NULL,
+      channel_product_no VARCHAR(255) DEFAULT NULL,
+      product_name TEXT DEFAULT NULL,
+      product_option TEXT DEFAULT NULL,
+      qty INT DEFAULT 0,
+      status VARCHAR(20) NOT NULL DEFAULT 'success',
+      message TEXT DEFAULT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS sync_config (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      \`key\` VARCHAR(255) UNIQUE NOT NULL,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS product_mapping (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      store_a_channel_product_no VARCHAR(255) NOT NULL,
+      store_a_product_name TEXT NOT NULL,
+      store_a_option_name VARCHAR(255) DEFAULT NULL,
+      store_b_channel_product_no VARCHAR(255) DEFAULT NULL,
+      store_b_product_name TEXT DEFAULT NULL,
+      store_b_option_name VARCHAR(255) DEFAULT NULL,
+      match_status VARCHAR(20) DEFAULT 'unmatched',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY (store_a_channel_product_no, store_a_option_name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  // Seed sync_config defaults
+  const configDefaults = [
+    ['sync_enabled', 'false'],
+    ['sync_interval_minutes', '5'],
+    ['product_match_mode', 'name'],
+    ['last_sync_time', ''],
+  ];
+  for (const [k, v] of configDefaults) {
+    await query(
+      'INSERT IGNORE INTO sync_config (`key`, value) VALUES (?, ?)',
+      [k, v]
+    );
   }
 
-  const count = db.prepare('SELECT COUNT(*) as cnt FROM inventory').get();
-  if (count.cnt === 0) {
-    seedData(db);
+  // Seed inventory if empty
+  const countRows = await query('SELECT COUNT(*) as cnt FROM inventory');
+  if (countRows[0].cnt === 0) {
+    await seedData();
   }
-
-  db.close();
 }
 
 function extractBrand(name) {
@@ -47,7 +108,7 @@ function extractBrand(name) {
   return '';
 }
 
-function seedData(db) {
+async function seedData() {
   const rawData = [
     ["ag 빅카라 코튼 반팔 롱 원피스","스카이블루",1],
     ["ag 골지원피스 카라 텐셀 스판 봄 여름","핑크",1],
@@ -327,13 +388,17 @@ function seedData(db) {
     ["[타이즈] 크림","크림",1],
   ];
 
-  const insert = db.prepare('INSERT INTO inventory (name, color, qty, brand) VALUES (?, ?, ?, ?)');
-  const insertMany = db.transaction((items) => {
-    for (const [name, color, qty] of items) {
-      insert.run(name, color, qty, extractBrand(name));
-    }
+  const values = [];
+  const params = [];
+  rawData.forEach((row) => {
+    values.push('(?, ?, ?, ?)');
+    params.push(row[0], row[1], row[2], extractBrand(row[0]));
   });
-  insertMany(rawData);
+
+  await query(
+    `INSERT INTO inventory (name, color, qty, brand) VALUES ${values.join(', ')}`,
+    params
+  );
 }
 
-module.exports = { getDb, initDb };
+module.exports = { getPool, initDb, query };

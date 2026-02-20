@@ -7,3 +7,21 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: STORE_A_CLIENT_ID
+        sync: false
+      - key: STORE_A_CLIENT_SECRET
+        sync: false
+      - key: STORE_B_CLIENT_ID
+        sync: false
+      - key: STORE_B_CLIENT_SECRET
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false

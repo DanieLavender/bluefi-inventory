@@ -796,6 +796,10 @@
             font-size: 11px;
             font-weight: 600;
         }
+        .type-return { background: #FFF3CD; color: #856404; }
+        .type-increase { background: var(--success-light); color: var(--success); }
+        .type-create { background: var(--accent-light); color: var(--accent); }
+        .type-error { background: #FEF2F2; color: var(--danger); }
         .type-in { background: var(--success-light); color: var(--success); }
         .type-out { background: #FEF2F2; color: var(--danger); }
         .type-edit { background: var(--accent-light); color: var(--accent); }
@@ -1105,7 +1109,7 @@
                 </a>
                 <a href="#log" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    입출고 내역
+                    동기화 로그
                 </a>
                 <a href="#brands" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
@@ -1296,69 +1300,55 @@
                 </div>
             </section>
 
-            <!-- ===== PAGE: Log ===== -->
+            <!-- ===== PAGE: Log (동기화 로그) ===== -->
             <section class="page-section" id="page-log" style="display:none">
+                <!-- Summary cards -->
+                <div class="summary-cards" id="logSummary">
+                    <div class="summary-card">
+                        <div class="summary-value" id="logTotalRuns">-</div>
+                        <div class="summary-label">총 실행 횟수</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-value" id="logTotalDetected">-</div>
+                        <div class="summary-label">감지된 반품</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-value" id="logTotalErrors">-</div>
+                        <div class="summary-label">오류 수</div>
+                    </div>
+                </div>
+
                 <div class="shell-card">
                     <div class="shell-header">
-                        <h2>입출고 내역</h2>
-                        <button class="btn btn-outline btn-sm">필터</button>
+                        <h2>동기화 로그</h2>
+                        <div style="display:flex;gap:8px;">
+                            <select class="filter-select" id="logTypeFilter" onchange="loadSyncLogs()" style="min-width:120px;">
+                                <option value="">전체 유형</option>
+                                <option value="return_detect">반품 감지</option>
+                                <option value="qty_increase">수량 증가</option>
+                                <option value="product_create">상품 등록</option>
+                                <option value="error">오류</option>
+                            </select>
+                            <select class="filter-select" id="logStatusFilter" onchange="loadSyncLogs()" style="min-width:100px;">
+                                <option value="">전체 상태</option>
+                                <option value="success">성공</option>
+                                <option value="fail">실패</option>
+                                <option value="skipped">스킵</option>
+                            </select>
+                        </div>
                     </div>
                     <table class="shell-table">
                         <thead>
-                            <tr><th>일시</th><th>유형</th><th>상품명</th><th>수량변동</th><th>처리자</th></tr>
+                            <tr><th>일시</th><th>유형</th><th>상품명</th><th>수량</th><th>상태</th><th>메시지</th></tr>
                         </thead>
-                        <tbody>
-                            <tr>
-                                <td>2026-02-10 14:32</td>
-                                <td><span class="type-badge type-in">입고</span></td>
-                                <td>hm 캐시미어 울 라운드니트</td>
-                                <td style="color:var(--success);">+5</td>
-                                <td>관리자</td>
-                            </tr>
-                            <tr>
-                                <td>2026-02-10 13:15</td>
-                                <td><span class="type-badge type-out">출고</span></td>
-                                <td>it 홀가먼트 베이직 캐시미어 울 라운드 니트</td>
-                                <td style="color:var(--danger);">-2</td>
-                                <td>관리자</td>
-                            </tr>
-                            <tr>
-                                <td>2026-02-10 11:40</td>
-                                <td><span class="type-badge type-edit">수정</span></td>
-                                <td>ls 폭스 울 라운드니트 아론 래글런 긴팔</td>
-                                <td>1 → 3</td>
-                                <td>관리자</td>
-                            </tr>
-                            <tr>
-                                <td>2026-02-09 18:22</td>
-                                <td><span class="type-badge type-in">입고</span></td>
-                                <td>mu 봄 여름 스트라이프 반팔 루즈 라운드니트 이즈</td>
-                                <td style="color:var(--success);">+10</td>
-                                <td>관리자</td>
-                            </tr>
-                            <tr>
-                                <td>2026-02-09 16:05</td>
-                                <td><span class="type-badge type-out">출고</span></td>
-                                <td>ov 캐시미어 울 하이넥니트 세라</td>
-                                <td style="color:var(--danger);">-1</td>
-                                <td>관리자</td>
-                            </tr>
-                            <tr>
-                                <td>2026-02-09 10:30</td>
-                                <td><span class="type-badge type-in">입고</span></td>
-                                <td>ps 캐시미어 울 후드 집업 니트베스트</td>
-                                <td style="color:var(--success);">+3</td>
-                                <td>관리자</td>
-                            </tr>
-                            <tr>
-                                <td>2026-02-08 15:12</td>
-                                <td><span class="type-badge type-edit">수정</span></td>
-                                <td>ru 캐시미어 울 라운드니트 베이직 긴팔</td>
-                                <td>2 → 1</td>
-                                <td>관리자</td>
-                            </tr>
+                        <tbody id="logTableBody">
+                            <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">동기화 로그가 없습니다.</td></tr>
                         </tbody>
                     </table>
+                    <div class="table-footer" id="logTableFooter" style="display:none;">
+                        <span class="table-footer-info" id="logFooterInfo"></span>
+                        <div class="pagination" id="logPagination"></div>
+                    </div>
                 </div>
             </section>
 
@@ -1373,6 +1363,71 @@
 
             <!-- ===== PAGE: Settings ===== -->
             <section class="page-section" id="page-settings" style="display:none">
+                <!-- 스마트스토어 연동 -->
+                <div class="shell-card" style="margin-bottom:20px;">
+                    <div class="settings-section">
+                        <h3>스마트스토어 연동 (A → B 반품 자동화)</h3>
+
+                        <!-- Store A -->
+                        <div style="margin-bottom:16px;padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);">
+                            <div style="font-size:13px;font-weight:600;margin-bottom:10px;">A 스토어 (반품 감지)</div>
+                            <div class="setting-row">
+                                <label>Client ID</label>
+                                <input type="text" id="storeAId" placeholder="Client ID 입력">
+                            </div>
+                            <div class="setting-row">
+                                <label>Client Secret</label>
+                                <input type="password" id="storeASecret" placeholder="Client Secret 입력">
+                            </div>
+                            <div style="text-align:right;margin-top:8px;">
+                                <button class="btn btn-outline btn-sm" onclick="testStoreConnection('A')">연결 테스트</button>
+                            </div>
+                        </div>
+
+                        <!-- Store B -->
+                        <div style="margin-bottom:16px;padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);">
+                            <div style="font-size:13px;font-weight:600;margin-bottom:10px;">B 스토어 (상품 등록/수량 증가)</div>
+                            <div class="setting-row">
+                                <label>Client ID</label>
+                                <input type="text" id="storeBId" placeholder="Client ID 입력">
+                            </div>
+                            <div class="setting-row">
+                                <label>Client Secret</label>
+                                <input type="password" id="storeBSecret" placeholder="Client Secret 입력">
+                            </div>
+                            <div style="text-align:right;margin-top:8px;">
+                                <button class="btn btn-outline btn-sm" onclick="testStoreConnection('B')">연결 테스트</button>
+                            </div>
+                        </div>
+
+                        <!-- Sync settings -->
+                        <div class="setting-row">
+                            <label>동기화 주기</label>
+                            <select id="syncInterval">
+                                <option value="1">1분</option>
+                                <option value="3">3분</option>
+                                <option value="5" selected>5분</option>
+                                <option value="10">10분</option>
+                                <option value="30">30분</option>
+                            </select>
+                        </div>
+                        <div class="setting-row">
+                            <label>자동 동기화</label>
+                            <div class="toggle-switch" id="syncToggle" onclick="toggleSyncEnabled()"></div>
+                        </div>
+                        <div class="setting-row">
+                            <label>마지막 동기화</label>
+                            <span id="lastSyncDisplay" style="font-size:13px;color:var(--text-secondary);">-</span>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+                            <button class="btn btn-primary btn-sm" onclick="saveSyncKeys()">설정 저장</button>
+                            <button class="btn btn-accent btn-sm" onclick="runSyncNow()">지금 실행</button>
+                            <span id="syncRunResult" style="font-size:12px;color:var(--text-secondary);align-self:center;"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 기본 설정 -->
                 <div class="shell-card">
                     <div class="settings-section">
                         <h3>기본 설정</h3>
@@ -1387,24 +1442,6 @@
                                 <option>50개</option>
                                 <option>100개</option>
                             </select>
-                        </div>
-                        <div class="setting-row">
-                            <label>테마</label>
-                            <select disabled>
-                                <option>라이트</option>
-                                <option>다크</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="settings-section">
-                        <h3>알림</h3>
-                        <div class="setting-row">
-                            <label>품절 알림</label>
-                            <div class="toggle-switch active" onclick="this.classList.toggle('active')"></div>
-                        </div>
-                        <div class="setting-row">
-                            <label>재고 변경 알림</label>
-                            <div class="toggle-switch" onclick="this.classList.toggle('active')"></div>
                         </div>
                     </div>
                     <div class="settings-section">
@@ -1539,7 +1576,7 @@
     const pageTitles = {
         'inventory': '재고 관리',
         'sales': '매출 현황',
-        'log': '입출고 내역',
+        'log': '동기화 로그',
         'brands': '브랜드 관리',
         'settings': '설정',
     };
@@ -1586,6 +1623,12 @@
         // Load brand cards when navigating to brands page
         if (page === 'brands') {
             loadBrandCards();
+        }
+        if (page === 'settings') {
+            loadSyncConfig();
+        }
+        if (page === 'log') {
+            loadSyncLogs();
         }
     }
 
@@ -2207,6 +2250,256 @@
             closeDropdown();
         }
     });
+
+    // ===== Sync: Settings page =====
+    async function loadSyncConfig() {
+        try {
+            const config = await api('/api/sync/config');
+            // Populate fields (show masked values)
+            document.getElementById('storeAId').placeholder = config.store_a_client_id || 'Client ID 입력';
+            document.getElementById('storeBId').placeholder = config.store_b_client_id || 'Client ID 입력';
+            if (config.store_a_client_id) document.getElementById('storeAId').value = '';
+            if (config.store_b_client_id) document.getElementById('storeBId').value = '';
+
+            // Interval
+            const interval = config.sync_interval_minutes || '5';
+            document.getElementById('syncInterval').value = interval;
+
+            // Toggle
+            const toggle = document.getElementById('syncToggle');
+            if (config.sync_enabled === 'true') {
+                toggle.classList.add('active');
+            } else {
+                toggle.classList.remove('active');
+            }
+
+            // Last sync time
+            const lastSync = config.last_sync_time;
+            if (lastSync) {
+                const d = new Date(lastSync);
+                document.getElementById('lastSyncDisplay').textContent = d.toLocaleString('ko-KR');
+            } else {
+                document.getElementById('lastSyncDisplay').textContent = '-';
+            }
+
+            // Sync status
+            const status = await api('/api/sync/status');
+            if (status.schedulerActive) {
+                document.getElementById('syncRunResult').textContent = '스케줄러 실행 중';
+            }
+        } catch (e) {
+            // Config not loaded — first run
+        }
+    }
+
+    async function saveSyncKeys() {
+        const body = {};
+        const aId = document.getElementById('storeAId').value.trim();
+        const aSecret = document.getElementById('storeASecret').value.trim();
+        const bId = document.getElementById('storeBId').value.trim();
+        const bSecret = document.getElementById('storeBSecret').value.trim();
+
+        if (aId) body.store_a_client_id = aId;
+        if (aSecret) body.store_a_client_secret = aSecret;
+        if (bId) body.store_b_client_id = bId;
+        if (bSecret) body.store_b_client_secret = bSecret;
+
+        if (Object.keys(body).length === 0) {
+            showToast('저장할 값을 입력해주세요.', 'error');
+            return;
+        }
+
+        try {
+            await api('/api/sync/save-keys', {
+                method: 'POST',
+                body: JSON.stringify(body)
+            });
+            showToast('API 키가 저장되었습니다.', 'success');
+            loadSyncConfig();
+        } catch (e) {
+            showToast('저장 실패: ' + e.message, 'error');
+        }
+    }
+
+    async function testStoreConnection(store) {
+        const idField = store === 'A' ? 'storeAId' : 'storeBId';
+        const secretField = store === 'A' ? 'storeASecret' : 'storeBSecret';
+        const clientId = document.getElementById(idField).value.trim();
+        const clientSecret = document.getElementById(secretField).value.trim();
+
+        if (!clientId || !clientSecret) {
+            showToast('Client ID와 Secret을 입력해주세요.', 'error');
+            return;
+        }
+
+        try {
+            showToast(`${store} 스토어 연결 테스트 중...`, 'info');
+            const result = await api('/api/sync/test-connection', {
+                method: 'POST',
+                body: JSON.stringify({ store: `Store-${store}`, clientId, clientSecret })
+            });
+            if (result.success) {
+                showToast(`${store} 스토어 연결 성공!`, 'success');
+            } else {
+                showToast(`${store} 스토어 연결 실패: ${result.message}`, 'error');
+            }
+        } catch (e) {
+            showToast(`연결 테스트 실패: ${e.message}`, 'error');
+        }
+    }
+
+    async function toggleSyncEnabled() {
+        const toggle = document.getElementById('syncToggle');
+        const isActive = toggle.classList.contains('active');
+
+        try {
+            if (isActive) {
+                // Turn OFF
+                await api('/api/sync/stop', { method: 'POST' });
+                toggle.classList.remove('active');
+                showToast('자동 동기화가 중지되었습니다.', 'info');
+                document.getElementById('syncRunResult').textContent = '';
+            } else {
+                // Turn ON
+                const interval = parseInt(document.getElementById('syncInterval').value) || 5;
+                await api('/api/sync/start', {
+                    method: 'POST',
+                    body: JSON.stringify({ intervalMinutes: interval })
+                });
+                toggle.classList.add('active');
+                showToast(`자동 동기화 시작 (${interval}분 간격)`, 'success');
+                document.getElementById('syncRunResult').textContent = '스케줄러 실행 중';
+            }
+        } catch (e) {
+            showToast('동기화 설정 오류: ' + e.message, 'error');
+            // Revert toggle
+            if (isActive) toggle.classList.add('active');
+            else toggle.classList.remove('active');
+        }
+    }
+
+    async function runSyncNow() {
+        const resultEl = document.getElementById('syncRunResult');
+        resultEl.textContent = '실행 중...';
+        try {
+            const result = await api('/api/sync/run', { method: 'POST' });
+            if (result.skipped) {
+                resultEl.textContent = result.message;
+                showToast(result.message, 'info');
+            } else {
+                const msg = `감지: ${result.detected}, 처리: ${result.processed}, 오류: ${result.errors}`;
+                resultEl.textContent = msg;
+                if (result.errors > 0) {
+                    showToast(`${msg} — 로그 페이지에서 상세 확인`, 'error');
+                } else if (result.detected === 0) {
+                    showToast('반품 완료 건이 없습니다.', 'info');
+                } else {
+                    showToast(`동기화 완료 — 감지 ${result.detected}건, 처리 ${result.processed}건`, 'success');
+                }
+                const now = new Date();
+                document.getElementById('lastSyncDisplay').textContent = now.toLocaleString('ko-KR');
+            }
+        } catch (e) {
+            resultEl.textContent = '실행 실패: ' + e.message;
+            showToast('동기화 실행 실패: ' + e.message, 'error');
+        }
+    }
+
+    // ===== Sync: Log page =====
+    let logCurrentPage = 1;
+
+    async function loadSyncLogs(page) {
+        if (page) logCurrentPage = page;
+        const type = document.getElementById('logTypeFilter').value;
+        const status = document.getElementById('logStatusFilter').value;
+
+        const params = new URLSearchParams();
+        if (type) params.set('type', type);
+        if (status) params.set('status', status);
+        params.set('page', logCurrentPage);
+        params.set('limit', 30);
+
+        try {
+            const data = await api(`/api/sync/logs?${params}`);
+
+            // Summary
+            document.getElementById('logTotalRuns').textContent = data.summary.totalRuns;
+            document.getElementById('logTotalDetected').textContent = data.summary.totalDetected;
+            document.getElementById('logTotalErrors').textContent = data.summary.totalErrors;
+
+            const tbody = document.getElementById('logTableBody');
+            const footer = document.getElementById('logTableFooter');
+
+            if (data.items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">동기화 로그가 없습니다.</td></tr>';
+                footer.style.display = 'none';
+                return;
+            }
+
+            const typeLabels = {
+                'return_detect': '반품 감지',
+                'qty_increase': '수량 증가',
+                'product_create': '상품 등록',
+                'error': '오류',
+            };
+            const typeClasses = {
+                'return_detect': 'type-return',
+                'qty_increase': 'type-increase',
+                'product_create': 'type-create',
+                'error': 'type-error',
+            };
+            const statusLabels = {
+                'success': '성공',
+                'fail': '실패',
+                'skipped': '스킵',
+            };
+
+            tbody.innerHTML = data.items.map(log => {
+                const d = new Date(log.created_at + 'Z');
+                const dateStr = d.toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+                const typeLabel = typeLabels[log.type] || log.type;
+                const typeClass = typeClasses[log.type] || 'type-edit';
+                const statusLabel = statusLabels[log.status] || log.status;
+                const statusColor = log.status === 'success' ? 'var(--success)' :
+                                    log.status === 'fail' ? 'var(--danger)' : 'var(--warning)';
+
+                const msgId = 'logmsg-' + log.id;
+                return `<tr>
+                    <td style="white-space:nowrap;font-size:12px;">${dateStr}</td>
+                    <td><span class="type-badge ${typeClass}">${typeLabel}</span></td>
+                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(log.product_name || '-')}</td>
+                    <td>${log.qty || '-'}</td>
+                    <td style="color:${statusColor};font-weight:600;font-size:12px;">${statusLabel}</td>
+                    <td style="font-size:12px;color:var(--text-muted);max-width:300px;">
+                        <span style="cursor:pointer;text-decoration:underline dotted;" onclick="document.getElementById('${msgId}').style.display=document.getElementById('${msgId}').style.display==='none'?'block':'none'">${escapeHtml((log.message || '-').slice(0, 40))}${(log.message||'').length > 40 ? '...' : ''}</span>
+                        <pre id="${msgId}" style="display:none;margin-top:6px;padding:8px;background:var(--bg-primary);border-radius:4px;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;">${escapeHtml(log.message || '')}</pre>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            // Pagination
+            footer.style.display = 'flex';
+            document.getElementById('logFooterInfo').textContent = `총 ${data.total}건`;
+
+            const pagDiv = document.getElementById('logPagination');
+            if (data.totalPages <= 1) {
+                pagDiv.innerHTML = '';
+            } else {
+                let html = `<button class="page-btn" ${logCurrentPage === 1 ? 'disabled' : ''} onclick="loadSyncLogs(${logCurrentPage - 1})">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>`;
+                for (let i = 1; i <= Math.min(data.totalPages, 7); i++) {
+                    html += `<button class="page-btn ${i === logCurrentPage ? 'active' : ''}" onclick="loadSyncLogs(${i})">${i}</button>`;
+                }
+                html += `<button class="page-btn" ${logCurrentPage === data.totalPages ? 'disabled' : ''} onclick="loadSyncLogs(${logCurrentPage + 1})">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                </button>`;
+                pagDiv.innerHTML = html;
+            }
+        } catch (e) {
+            // API might not have logs yet
+        }
+    }
 
     // ===== Init =====
     async function init() {

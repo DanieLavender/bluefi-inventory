@@ -11,7 +11,9 @@
 |------|------|------|
 | 런타임 | Node.js | v24+ |
 | 서버 | Express | ^4.21.0 |
-| DB | better-sqlite3 | ^11.7.0 |
+| DB | MySQL 8.0 + mysql2 | ^3.17.0 |
+| 인증 | bcryptjs | ^3.0.2 |
+| 환경변수 | dotenv | ^16.x |
 | 프론트 | Vanilla HTML/CSS/JS | - |
 | 배포 | Render.com (예정) | - |
 
@@ -19,35 +21,41 @@
 ```
 C:\claude\Shoppingmall\
 ├── CLAUDE.md              ← 이 파일 (프로젝트 컨텍스트)
-├── server.js              ← Express 서버 + REST API (171줄)
-├── database.js            ← SQLite 초기화 + 시드 데이터 (339줄)
+├── server.js              ← Express 서버 + REST API + 동기화 API
+├── database.js            ← SQLite 초기화 + 시드 데이터 + sync 테이블
+├── smartstore.js          ← 네이버 커머스 API 클라이언트 (NaverCommerceClient)
+├── sync-scheduler.js      ← 반품→재등록 동기화 스케줄러 (SyncScheduler)
 ├── package.json           ← 의존성 정의
 ├── package-lock.json
-├── render.yaml            ← Render.com 배포 설정
-├── .gitignore             ← node_modules, *.db, *.xlsx 제외
-├── inventory.db           ← SQLite DB (자동 생성, git 제외)
+├── render.yaml            ← Render.com 배포 설정 (스토어 환경변수 포함)
+├── .env.example           ← 환경변수 템플릿
+├── .gitignore             ← node_modules, *.db, *.xlsx, .env 제외
+├── inventory.db           ← (삭제됨, 외부 MySQL로 이전)
 ├── inventory.html         ← 구버전 단독 HTML (사용 안 함)
 ├── 블루파이재고_260209.xlsx ← 원본 엑셀 (git 제외)
 ├── inventory_data.json    ← 엑셀→JSON 변환 중간파일 (git 제외)
 └── public/
-    └── index.html         ← 프론트엔드 SPA (사이드바+상단바 레이아웃, ~950줄)
+    └── index.html         ← 프론트엔드 SPA (사이드바+상단바 레이아웃)
 ```
 
-## DB 스키마
+## DB 스키마 (MySQL 8.0)
 ```sql
 CREATE TABLE inventory (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INT AUTO_INCREMENT PRIMARY KEY,
   name TEXT NOT NULL,          -- 상품명 (예: "hm 캐시미어 울 라운드니트")
-  color TEXT NOT NULL,         -- 컬러 (예: "아이보리")
-  qty INTEGER NOT NULL DEFAULT 0,  -- 수량
-  brand TEXT DEFAULT '',       -- 브랜드 코드 (예: "hm", "it", "ls")
+  color VARCHAR(255) NOT NULL, -- 컬러 (예: "아이보리")
+  qty INT NOT NULL DEFAULT 0,  -- 수량
+  brand VARCHAR(10) DEFAULT '',-- 브랜드 코드 (예: "hm", "it", "ls")
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT NULL  -- 수량 변경 시 자동 갱신
 );
 ```
+- **DB 호스팅**: 회사 MySQL 서버 (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME 환경변수)
 - 초기 데이터: database.js의 seedData() 함수에 276개 하드코딩
 - brand는 상품명 앞 2글자 알파벳에서 자동 추출 (extractBrand 함수)
-- updated_at은 수량 변경 시만 CURRENT_TIMESTAMP로 갱신
+- updated_at은 수량 변경 시만 NOW()로 갱신
+- database.js는 `mysql2` Pool 싱글톤 패턴, 모든 DB 접근은 비동기(`async/await`)
+- `key` 컬럼은 MySQL 예약어 → 항상 백틱(`` `key` ``)으로 감싸기
 
 ## API 엔드포인트
 | Method | Path | 설명 |
@@ -106,8 +114,50 @@ ag, ed, hm, ig, it, lc, ls, mo, mu, mv, ov, ps, ru, sm, ve, vi
 - Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 - master 브랜치 단일 사용
 
+## 스마트스토어 동기화 시스템
+
+### 개요
+A 스마트스토어 반품 완료 → B 스마트스토어 상품 수량 증가 (자동/수동)
+
+### 동기화 흐름
+1. A 스토어 반품 완료 건 조회 (네이버 커머스 API)
+2. 반품 상세 조회 (상품명, 옵션, 수량)
+3. product_mapping에서 B 매핑 확인
+4. 매핑 있으면 → B 수량 증가 / 없으면 → 자동 매칭 시도 or 수동 매핑 유도
+5. 모든 처리 sync_log에 기록
+
+### Sync API
+| Method | Path | 설명 |
+|--------|------|------|
+| POST | /api/sync/run | 수동 즉시 동기화 |
+| GET | /api/sync/status | 동기화 상태 |
+| POST | /api/sync/start | 자동 스케줄러 시작 |
+| POST | /api/sync/stop | 자동 스케줄러 중지 |
+| GET | /api/sync/logs | 동기화 로그 (필터, 페이지네이션) |
+| GET | /api/sync/config | 설정 조회 (secret 마스킹) |
+| PUT | /api/sync/config | 설정 수정 (UPSERT) |
+| GET | /api/sync/mappings | 상품 매핑 목록 |
+| PUT | /api/sync/mappings/:id | 수동 매핑 설정 |
+| POST | /api/sync/test-connection | 연결 테스트 |
+
+### Sync DB 테이블
+- **sync_log**: 동기화 이력 (run_id, type, status, product info)
+- **sync_config**: key-value 설정 (sync_enabled, sync_interval_minutes 등)
+- **product_mapping**: A↔B 상품 매핑 (match_status: matched/unmatched/manual)
+
+### 환경변수
+```
+STORE_A_CLIENT_ID / STORE_A_CLIENT_SECRET — A 스토어 API 키
+STORE_B_CLIENT_ID / STORE_B_CLIENT_SECRET — B 스토어 API 키
+```
+
 ## 주의사항
-- SQL 문자열 비교 시 빈 문자열은 `''` (쌍따옴표 아님) 사용 — SQLite에서 `""` 는 식별자
-- inventory.db는 .gitignore에 포함 → 배포 시 서버에서 자동 생성 + seedData 실행
+- **DB**: MySQL 8.0 사용, `DB_HOST/DB_USER/DB_PASSWORD/DB_NAME` 환경변수 필수
+- SQL 파라미터: `?` 플레이스홀더 사용 (mysql2)
+- `mysql2` 드라이버: SUM은 DECIMAL(문자열) 반환 → `Number()` 변환 필요
+- `key` 컬럼: MySQL 예약어이므로 항상 `` `key` ``로 감싸야 함
+- UPSERT: `ON DUPLICATE KEY UPDATE value = VALUES(value)` 패턴
+- INSERT 후 결과: `RETURNING *` 미지원 → `result.insertId`로 별도 SELECT
+- inventory 테이블이 비어있으면 initDb()에서 276개 시드 자동 삽입
 - extractBrand()가 server.js와 database.js에 각각 존재 (중복이지만 의도적 — 모듈 독립성)
-- 기존 DB에 updated_at 컬럼이 없으면 initDb()에서 ALTER TABLE로 자동 마이그레이션
+- 모든 DB 접근은 `async/await` — server.js, sync-scheduler.js 전체 비동기
