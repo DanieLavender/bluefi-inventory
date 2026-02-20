@@ -130,6 +130,9 @@ app.put('/api/inventory/:id', async (req, res) => {
       if (!trimmed) return res.status(400).json({ error: '상품명을 입력해주세요.' });
       sets.push('name = ?');
       params.push(trimmed);
+      const newBrand = extractBrand(trimmed);
+      sets.push('brand = ?');
+      params.push(newBrand);
     }
     if (qty !== undefined) {
       sets.push('qty = ?, updated_at = NOW()');
@@ -139,14 +142,14 @@ app.put('/api/inventory/:id', async (req, res) => {
       return res.status(400).json({ error: '변경할 항목이 없습니다.' });
     }
     params.push(id);
-    const result = await query(
+    await query(
       `UPDATE inventory SET ${sets.join(', ')} WHERE id = ?`,
       params
     );
-    if (result.affectedRows === 0) {
+    const rows = await query('SELECT * FROM inventory WHERE id = ?', [id]);
+    if (rows.length === 0) {
       return res.status(404).json({ error: '항목을 찾을 수 없습니다.' });
     }
-    const rows = await query('SELECT * FROM inventory WHERE id = ?', [id]);
     res.json(rows[0]);
   } catch (e) {
     res.status(500).json({ error: e.message });

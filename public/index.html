@@ -45,6 +45,7 @@
 
         /* ===== 2. Reset & Base ===== */
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html { overflow-x: hidden; }
         body {
             font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Malgun Gothic', sans-serif;
             font-size: 14px;
@@ -53,6 +54,7 @@
             display: flex;
             min-height: 100vh;
             -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
         }
 
         /* ===== 3. Sidebar ===== */
@@ -170,13 +172,15 @@
         .sidebar-overlay.active { display: block; }
 
         /* ===== 5. App Wrapper & Main ===== */
-        .app-wrapper { display: flex; width: 100%; }
+        .app-wrapper { display: flex; width: 100%; min-width: 0; overflow-x: hidden; }
         .main-content {
             margin-left: var(--sidebar-width);
             flex: 1;
+            min-width: 0;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow-x: hidden;
         }
 
         /* ===== 6. Topbar ===== */
@@ -789,6 +793,10 @@
             font-size: 13px;
             border-bottom: 1px solid var(--border-light);
         }
+        .log-filters { display: flex; gap: 8px; }
+        .log-date { white-space: nowrap; font-size: 12px; }
+        .log-product { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .log-message { font-size: 12px; color: var(--text-muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .type-badge {
             display: inline-block;
             padding: 2px 8px;
@@ -1012,7 +1020,7 @@
             .topbar-right #refreshBtn { padding: 7px; }
             .topbar-right #refreshBtn svg { width: 18px; height: 18px; }
 
-            .page-section { padding: 12px; }
+            .page-section { padding: 12px; overflow: hidden; }
             .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
             .stat-card { padding: 12px; gap: 10px; }
             .stat-icon { width: 36px; height: 36px; border-radius: 10px; }
@@ -1093,9 +1101,27 @@
             .setting-row { flex-direction: column; align-items: flex-start; gap: 8px; }
             .setting-row input[type="text"], .setting-row select { width: 100%; }
             .shell-card { padding: 12px; }
-            .shell-table th, .shell-table td { padding: 8px 8px; font-size: 12px; }
-            /* 셸 테이블 가로 스크롤 */
-            .shell-card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            .shell-table th, .shell-table td { padding: 8px 6px; font-size: 11px; }
+            .log-header { flex-wrap: wrap; gap: 8px; }
+            .log-filters { width: 100%; }
+            .log-filters .filter-select { flex: 1; min-width: 0 !important; font-size: 16px; padding: 10px 28px 10px 10px; }
+            /* 로그 테이블: 모바일에서 컬럼 너비 고정 */
+            #page-log .shell-table { table-layout: fixed; width: 100%; }
+            #page-log .shell-table th:nth-child(1),
+            #page-log .shell-table td:nth-child(1) { width: 22%; } /* 일시 */
+            #page-log .shell-table th:nth-child(2),
+            #page-log .shell-table td:nth-child(2) { width: 16%; } /* 유형 */
+            #page-log .shell-table th:nth-child(3),
+            #page-log .shell-table td:nth-child(3) { width: 25%; } /* 상품명 */
+            #page-log .shell-table th:nth-child(4),
+            #page-log .shell-table td:nth-child(4) { width: 8%; }  /* 수량 */
+            #page-log .shell-table th:nth-child(5),
+            #page-log .shell-table td:nth-child(5) { width: 10%; } /* 상태 */
+            #page-log .shell-table th:nth-child(6),
+            #page-log .shell-table td:nth-child(6) { width: 19%; } /* 메시지 */
+            .log-date { font-size: 10px; word-break: break-all; white-space: normal; }
+            .log-product { max-width: none; font-size: 11px; white-space: normal; word-break: break-all; -webkit-line-clamp: 2; display: -webkit-box; -webkit-box-orient: vertical; }
+            .log-message { max-width: none; font-size: 10px; white-space: normal; word-break: break-all; -webkit-line-clamp: 2; display: -webkit-box; -webkit-box-orient: vertical; }
         }
 
         /* ===== 33. Responsive: Small ===== */
@@ -1384,18 +1410,18 @@
                     </div>
                 </div>
 
-                <div class="shell-card">
-                    <div class="shell-header">
+                <div class="shell-card" style="overflow:hidden;">
+                    <div class="shell-header log-header">
                         <h2>동기화 로그</h2>
-                        <div style="display:flex;gap:8px;">
-                            <select class="filter-select" id="logTypeFilter" onchange="loadSyncLogs()" style="min-width:120px;">
+                        <div class="log-filters">
+                            <select class="filter-select" id="logTypeFilter" onchange="loadSyncLogs()">
                                 <option value="">전체 유형</option>
                                 <option value="return_detect">반품 감지</option>
                                 <option value="qty_increase">수량 증가</option>
                                 <option value="product_create">상품 등록</option>
                                 <option value="error">오류</option>
                             </select>
-                            <select class="filter-select" id="logStatusFilter" onchange="loadSyncLogs()" style="min-width:100px;">
+                            <select class="filter-select" id="logStatusFilter" onchange="loadSyncLogs()">
                                 <option value="">전체 상태</option>
                                 <option value="success">성공</option>
                                 <option value="fail">실패</option>
@@ -1403,14 +1429,16 @@
                             </select>
                         </div>
                     </div>
-                    <table class="shell-table">
-                        <thead>
-                            <tr><th>일시</th><th>유형</th><th>상품명</th><th>수량</th><th>상태</th><th>메시지</th></tr>
-                        </thead>
-                        <tbody id="logTableBody">
-                            <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">동기화 로그가 없습니다.</td></tr>
-                        </tbody>
-                    </table>
+                    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+                        <table class="shell-table">
+                            <thead>
+                                <tr><th>일시</th><th>유형</th><th>상품명</th><th>수량</th><th>상태</th><th>메시지</th></tr>
+                            </thead>
+                            <tbody id="logTableBody">
+                                <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">동기화 로그가 없습니다.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                     <div class="table-footer" id="logTableFooter" style="display:none;">
                         <span class="table-footer-info" id="logFooterInfo"></span>
                         <div class="pagination" id="logPagination"></div>
@@ -1800,7 +1828,7 @@
             });
             if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
             closeEditModal();
-            loadInventory();
+            loadData();
         } catch (e) { alert('수정 실패: ' + e.message); }
     }
 
@@ -2588,24 +2616,26 @@
             };
 
             tbody.innerHTML = data.items.map(log => {
-                const d = new Date(log.created_at + 'Z');
-                const dateStr = d.toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+                const d = new Date(log.created_at);
+                const dateStr = isNaN(d.getTime()) ? (log.created_at || '-') :
+                    d.toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12: false });
                 const typeLabel = typeLabels[log.type] || log.type;
                 const typeClass = typeClasses[log.type] || 'type-edit';
                 const statusLabel = statusLabels[log.status] || log.status;
                 const statusColor = log.status === 'success' ? 'var(--success)' :
                                     log.status === 'fail' ? 'var(--danger)' : 'var(--warning)';
 
+                const productName = log.product_name || '-';
+                const msg = log.message || '-';
                 const msgId = 'logmsg-' + log.id;
                 return `<tr>
-                    <td style="white-space:nowrap;font-size:12px;">${dateStr}</td>
+                    <td class="log-date">${dateStr}</td>
                     <td><span class="type-badge ${typeClass}">${typeLabel}</span></td>
-                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(log.product_name || '-')}</td>
+                    <td class="log-product" title="${escapeHtml(productName)}">${escapeHtml(productName)}</td>
                     <td>${log.qty || '-'}</td>
                     <td style="color:${statusColor};font-weight:600;font-size:12px;">${statusLabel}</td>
-                    <td style="font-size:12px;color:var(--text-muted);max-width:300px;">
-                        <span style="cursor:pointer;text-decoration:underline dotted;" onclick="document.getElementById('${msgId}').style.display=document.getElementById('${msgId}').style.display==='none'?'block':'none'">${escapeHtml((log.message || '-').slice(0, 40))}${(log.message||'').length > 40 ? '...' : ''}</span>
-                        <pre id="${msgId}" style="display:none;margin-top:6px;padding:8px;background:var(--bg-primary);border-radius:4px;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;">${escapeHtml(log.message || '')}</pre>
+                    <td class="log-message" title="${escapeHtml(msg)}">
+                        <span>${escapeHtml(msg.length > 50 ? msg.slice(0, 50) + '...' : msg)}</span>
                     </td>
                 </tr>`;
             }).join('');
