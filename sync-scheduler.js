@@ -403,9 +403,9 @@ class SyncScheduler {
   async fetchSalesData() {
     if (!this.hasClients()) return;
 
+    // Store B는 주문 조회 API 권한이 없으므로 A만 수집
     const stores = [
       { key: 'A', client: this.storeA, configKey: 'sales_last_fetch_a' },
-      { key: 'B', client: this.storeB, configKey: 'sales_last_fetch_b' },
     ];
 
     for (const { key, client, configKey } of stores) {

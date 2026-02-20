@@ -334,9 +334,9 @@ app.post('/api/sales/fetch', async (req, res) => {
     await initSyncClients();
 
     const { resetDays } = req.body || {};
+    // Store B는 주문 조회 API 권한이 없으므로 A만 수집
     const stores = [
       { key: 'A', client: scheduler.storeA, configKey: 'sales_last_fetch_a' },
-      { key: 'B', client: scheduler.storeB, configKey: 'sales_last_fetch_b' },
     ];
 
     // 리셋 요청 시 last_fetch 초기화

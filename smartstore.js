@@ -192,7 +192,7 @@ class NaverCommerceClient {
    * @returns {Array} product order IDs
    */
   async getOrders(fromDate, toDate) {
-    const typesToCheck = ['PAYED', 'DELIVERED', 'PURCHASE_DECIDED'];
+    const typesToCheck = ['PAYED', 'PURCHASE_DECIDED'];
     const seen = new Set();
     const allOrderIds = [];
     const errors = [];
