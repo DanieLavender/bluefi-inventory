@@ -431,6 +431,9 @@ class SyncScheduler {
 
                 for (const detail of details) {
                   const po = detail.productOrder || detail;
+                  const order = detail.order || {};
+                  const rawDate = order.paymentDate || order.orderDate || po.placeOrderDate || chunkEnd.toISOString();
+                  const orderDate = new Date(rawDate).toISOString();
                   try {
                     await query(
                       `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
@@ -438,7 +441,7 @@ class SyncScheduler {
                       [
                         key,
                         po.productOrderId || '',
-                        po.placeOrderDate || po.paymentDate || po.orderDate || chunkEnd.toISOString(),
+                        orderDate,
                         po.productName || '',
                         po.optionName || null,
                         po.quantity || 1,

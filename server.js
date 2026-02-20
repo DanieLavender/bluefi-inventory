@@ -301,49 +301,6 @@ app.get('/api/sales/debug', async (req, res) => {
   }
 });
 
-// GET /api/sales/debug-fetch - fetch 과정 시뮬레이션 (INSERT 없이 추출 값 반환)
-app.get('/api/sales/debug-fetch', async (req, res) => {
-  try {
-    await initSyncClients();
-    const now = new Date();
-    const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-    // 1) 주문 ID 가져오기
-    const orderIds = await scheduler.storeA.getOrders(from.toISOString(), now.toISOString());
-    if (orderIds.length === 0) return res.json({ message: 'No orders found', range: { from: from.toISOString(), to: now.toISOString() } });
-
-    // 2) 상세 조회 (최대 5건)
-    const batch = orderIds.slice(0, 5);
-    const details = await scheduler.storeA.getProductOrderDetail(batch);
-
-    // 3) fetch 코드와 동일한 추출 로직 적용
-    const chunkEnd = now;
-    const extracted = details.map((detail, idx) => {
-      const po = detail.productOrder || detail;
-      const order = detail.order || {};
-      return {
-        idx,
-        // order 객체 전체 키 + 날짜 관련 필드
-        orderKeys: Object.keys(order),
-        orderPaymentDate: order.paymentDate,
-        orderOrderDate: order.orderDate,
-        orderPlaceOrderDate: order.placeOrderDate,
-        // productOrder 날짜 필드
-        poPlaceOrderDate: po.placeOrderDate,
-        poPaymentDate: po.paymentDate,
-        poOrderDate: po.orderDate,
-        // 기타
-        productOrderId: po.productOrderId,
-        productName: (po.productName || '').slice(0, 30),
-      };
-    });
-
-    res.json({ orderIdsCount: orderIds.length, detailsCount: details.length, extracted });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // POST /api/sales/fetch - 수동 매출 데이터 수집
 app.post('/api/sales/fetch', async (req, res) => {
   try {
@@ -398,8 +355,10 @@ app.post('/api/sales/fetch', async (req, res) => {
 
                 for (const detail of details) {
                   const po = detail.productOrder || detail;
+                  const order = detail.order || {};
                   const productOrderId = po.productOrderId || '';
-                  const orderDate = po.placeOrderDate || po.paymentDate || po.orderDate || chunkEnd.toISOString();
+                  const rawDate = order.paymentDate || order.orderDate || po.placeOrderDate || chunkEnd.toISOString();
+                  const orderDate = new Date(rawDate).toISOString();
                   const productName = po.productName || '';
                   const optionName = po.optionName || null;
                   const qty = po.quantity || 1;
@@ -408,13 +367,10 @@ app.post('/api/sales/fetch', async (req, res) => {
                   const status = po.productOrderStatus || '';
                   const channelProductNo = String(po.channelProductNo || po.productId || '');
 
-                  // 첫 실행 시 필드 구조 로깅 (detail 전체 키 + po 날짜 필드)
+                  // 첫 실행 시 필드 구조 로깅
                   if (storeInserted === 0 && i === 0) {
-                    console.log(`[Sales] detail 키:`, Object.keys(detail));
-                    console.log(`[Sales] detail.productOrder 존재:`, !!detail.productOrder);
-                    console.log(`[Sales] po 날짜 필드: placeOrderDate=${po.placeOrderDate}, paymentDate=${po.paymentDate}, orderDate=${po.orderDate}`);
+                    console.log(`[Sales] 날짜 추출: order.paymentDate=${order.paymentDate}, order.orderDate=${order.orderDate}, po.placeOrderDate=${po.placeOrderDate}`);
                     console.log(`[Sales] 최종 orderDate:`, orderDate);
-                    console.log(`[Sales] po 샘플 (500자):`, JSON.stringify(po).slice(0, 500));
                   }
 
                   try {
