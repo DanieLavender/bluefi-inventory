@@ -248,33 +248,40 @@ app.get('/api/sales/recent', async (req, res) => {
   }
 });
 
-// GET /api/sales/debug - 결제일 기준 주문 조회 디버그
+// GET /api/sales/debug - 주문 조회 디버그 (lastChangedType 생략)
 app.get('/api/sales/debug', async (req, res) => {
   try {
     await initSyncClients();
     const now = new Date();
     const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    const details = await scheduler.storeA.getOrdersByPaymentDate(from.toISOString(), now.toISOString());
+    // lastChangedType 생략하여 모든 상태 변경 조회
+    const params = new URLSearchParams({
+      lastChangedFrom: from.toISOString(),
+      lastChangedTo: now.toISOString(),
+    });
+    const data = await scheduler.storeA.apiCall(
+      'GET',
+      `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
+    );
+    const statuses = data?.data?.lastChangeStatuses || [];
+
+    // 상태별 분포
     const statusDist = {};
-    for (const d of details) {
-      const s = d.productOrder?.productOrderStatus || '?';
-      statusDist[s] = (statusDist[s] || 0) + 1;
+    for (const s of statuses) {
+      const key = s.productOrderStatus || '?';
+      statusDist[key] = (statusDist[key] || 0) + 1;
     }
 
-    const sample = details[0] ? {
-      detailKeys: Object.keys(details[0]),
-      orderKeys: Object.keys(details[0].order || {}),
-      poStatus: details[0].productOrder?.productOrderStatus,
-      paymentDate: details[0].order?.paymentDate,
-      productName: details[0].productOrder?.productName,
-    } : null;
+    // productOrderId 중복 제거 후 건수
+    const uniqueIds = new Set(statuses.map(s => s.productOrderId));
 
     res.json({
       queryRange: { from: from.toISOString(), to: now.toISOString() },
-      totalCount: details.length,
+      totalStatuses: statuses.length,
+      uniqueOrders: uniqueIds.size,
       statusDistribution: statusDist,
-      sample,
+      sample: statuses.slice(0, 3),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -321,41 +328,45 @@ app.post('/api/sales/fetch', async (req, res) => {
           const chunkEnd = new Date(Math.min(cursor.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
 
           try {
-            // 결제일 기준 주문 조회 (상태 무관 — 배송중/구매확정 모두 포함)
-            const details = await client.getOrdersByPaymentDate(cursor.toISOString(), chunkEnd.toISOString());
-            storeFound += details.length;
-            if (details.length > 0) {
-              console.log(`[Sales] Store ${key} ${cursor.toISOString().slice(0,10)}: ${details.length}건 발견`);
-            }
+            // lastChangedType 생략 → 모든 상태 변경 포함 (배송중/구매확정 등)
+            const orderIds = await client.getOrders(cursor.toISOString(), chunkEnd.toISOString());
+            storeFound += orderIds.length;
 
-            for (const detail of details) {
-              const po = detail.productOrder || detail;
-              const order = detail.order || {};
-              const productOrderId = po.productOrderId || '';
-              const rawDate = order.paymentDate || order.orderDate || po.placeOrderDate || chunkEnd.toISOString();
-              const orderDate = new Date(rawDate).toISOString();
-              const productName = po.productName || '';
-              const optionName = po.optionName || null;
-              const qty = po.quantity || 1;
-              const unitPrice = po.unitPrice || po.salePrice || 0;
-              const totalAmount = po.totalPaymentAmount || po.totalProductAmount || (unitPrice * qty);
-              const status = po.productOrderStatus || '';
-              const channelProductNo = String(po.channelProductNo || po.productId || '');
+            if (orderIds.length > 0) {
+              const batchSize = 50;
+              for (let i = 0; i < orderIds.length; i += batchSize) {
+                const batch = orderIds.slice(i, i + batchSize);
+                const details = await client.getProductOrderDetail(batch);
 
-              // 첫 실행 시 필드 구조 로깅
-              if (storeInserted === 0) {
-                console.log(`[Sales] 결제일 기준 조회 응답 샘플:`, JSON.stringify({ orderKeys: Object.keys(order), poStatus: status, paymentDate: order.paymentDate }).slice(0, 300));
-              }
+                for (const detail of details) {
+                  const po = detail.productOrder || detail;
+                  const order = detail.order || {};
+                  const productOrderId = po.productOrderId || '';
+                  const rawDate = order.paymentDate || order.orderDate || po.placeOrderDate || chunkEnd.toISOString();
+                  const orderDate = new Date(rawDate).toISOString();
+                  const productName = po.productName || '';
+                  const optionName = po.optionName || null;
+                  const qty = po.quantity || 1;
+                  const unitPrice = po.unitPrice || po.salePrice || 0;
+                  const totalAmount = po.totalPaymentAmount || po.totalProductAmount || (unitPrice * qty);
+                  const status = po.productOrderStatus || '';
+                  const channelProductNo = String(po.channelProductNo || po.productId || '');
 
-              try {
-                await query(
-                  `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                  [key, productOrderId, orderDate, productName, optionName, qty, unitPrice, totalAmount, status, channelProductNo]
-                );
-                storeInserted++;
-              } catch (dbErr) {
-                // INSERT IGNORE handles duplicates silently
+                  try {
+                    await query(
+                      `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                      [key, productOrderId, orderDate, productName, optionName, qty, unitPrice, totalAmount, status, channelProductNo]
+                    );
+                    storeInserted++;
+                  } catch (dbErr) {
+                    // INSERT IGNORE handles duplicates silently
+                  }
+                }
+
+                if (i + batchSize < orderIds.length) {
+                  await new Promise(r => setTimeout(r, 300));
+                }
               }
             }
           } catch (chunkErr) {

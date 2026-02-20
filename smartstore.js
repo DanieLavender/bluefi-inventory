@@ -182,28 +182,39 @@ class NaverCommerceClient {
     return data.data;
   }
 
-  // === Orders: Payment date based query ===
+  // === Orders: All status changes query ===
 
   /**
-   * 결제일 기준 주문 상세 조회 (max 24h per call)
-   * 상태 변경이 아닌 결제일(불변) 기준이므로 배송중/구매확정 등 모든 주문 포함
+   * 모든 상태 변경 주문 조회 (max 24h per call)
+   * lastChangedType 생략 → PAYED/DELIVERING/DELIVERED/PURCHASE_DECIDED 모두 포함
    * @param {string} fromDate ISO datetime
    * @param {string} toDate ISO datetime
-   * @returns {Array} order detail objects (productOrder + order 포함)
+   * @returns {Array} product order IDs (deduplicated)
    */
-  async getOrdersByPaymentDate(fromDate, toDate) {
+  async getOrders(fromDate, toDate) {
     const params = new URLSearchParams({
-      rangeType: 'PAYMENT_DATETIME',
-      from: fromDate,
-      to: toDate,
+      lastChangedFrom: fromDate,
+      lastChangedTo: toDate,
     });
 
     const data = await this.apiCall(
       'GET',
-      `/v1/pay-order/seller/product-orders?${params}`
+      `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
     );
 
-    return data?.data || [];
+    const statuses = data?.data?.lastChangeStatuses || [];
+    if (statuses.length > 0) {
+      // 상태별 분포 로깅
+      const dist = {};
+      for (const s of statuses) dist[s.productOrderStatus] = (dist[s.productOrderStatus] || 0) + 1;
+      console.log(`[${this.storeName}] 전체 상태 변경 ${statuses.length}건:`, JSON.stringify(dist));
+    }
+
+    // productOrderId 중복 제거
+    const seen = new Set();
+    return statuses
+      .filter(s => { if (seen.has(s.productOrderId)) return false; seen.add(s.productOrderId); return true; })
+      .map(s => s.productOrderId);
   }
 
   // === Store B: Product queries and updates ===
