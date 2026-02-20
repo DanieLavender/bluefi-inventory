@@ -301,8 +301,9 @@ app.post('/api/sales/fetch', async (req, res) => {
       try {
         const lastFetch = await scheduler.getConfig(configKey);
         const now = new Date();
-        const from = lastFetch ? new Date(lastFetch) : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const from = lastFetch ? new Date(lastFetch) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+        console.log(`[Sales] Store ${key} 수집 시작: ${from.toISOString()} ~ ${now.toISOString()}`);
         let cursor = new Date(from);
         let storeInserted = 0;
 
@@ -311,6 +312,7 @@ app.post('/api/sales/fetch', async (req, res) => {
 
           try {
             const orderIds = await client.getOrders(cursor.toISOString(), chunkEnd.toISOString());
+            console.log(`[Sales] Store ${key} ${cursor.toISOString().slice(0,10)}: ${orderIds.length}건`);
 
             if (orderIds.length > 0) {
               const batchSize = 50;

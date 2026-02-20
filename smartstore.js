@@ -185,33 +185,48 @@ class NaverCommerceClient {
   // === Orders: Paid order queries ===
 
   /**
-   * Get paid orders in a time range (max 24h per call)
+   * Get orders in a time range (max 24h per call)
+   * 여러 상태 타입을 조회하여 가능한 모든 주문 수집
    * @param {string} fromDate ISO datetime
    * @param {string} toDate ISO datetime
-   * @returns {Array} product order IDs with PAYED status
+   * @returns {Array} product order IDs
    */
   async getOrders(fromDate, toDate) {
-    const params = new URLSearchParams({
-      lastChangedFrom: fromDate,
-      lastChangedTo: toDate,
-      lastChangedType: 'PAYED',
-    });
-
-    const data = await this.apiCall(
-      'GET',
-      `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
-    );
-
-    if (!data?.data?.lastChangeStatuses) return [];
-
+    const typesToCheck = ['PAYED', 'DELIVERED', 'PURCHASE_DECIDED'];
     const seen = new Set();
-    return data.data.lastChangeStatuses
-      .filter(s => {
-        if (seen.has(s.productOrderId)) return false;
-        seen.add(s.productOrderId);
-        return true;
-      })
-      .map(s => s.productOrderId);
+    const allOrderIds = [];
+
+    for (const changeType of typesToCheck) {
+      try {
+        const params = new URLSearchParams({
+          lastChangedFrom: fromDate,
+          lastChangedTo: toDate,
+          lastChangedType: changeType,
+        });
+
+        const data = await this.apiCall(
+          'GET',
+          `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
+        );
+
+        const statuses = data?.data?.lastChangeStatuses || [];
+        if (statuses.length > 0) {
+          console.log(`[${this.storeName}] ${changeType}: ${statuses.length}건`);
+        }
+
+        for (const s of statuses) {
+          if (!seen.has(s.productOrderId)) {
+            seen.add(s.productOrderId);
+            allOrderIds.push(s.productOrderId);
+          }
+        }
+      } catch (e) {
+        console.log(`[${this.storeName}] ${changeType} 조회 오류 (무시):`, e.message);
+      }
+      await this.sleep(300);
+    }
+
+    return allOrderIds;
   }
 
   // === Store B: Product queries and updates ===
