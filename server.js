@@ -182,103 +182,54 @@ app.get('/api/server-ip', async (req, res) => {
 
 // --- Sales API Routes ---
 
-// GET /api/sales/stats - 매출 요약 (이번달/전월)
+// GET /api/sales/stats - 오늘 매출 요약 (어제 비교)
 app.get('/api/sales/stats', async (req, res) => {
   try {
     const now = new Date();
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+    const todayStart = now.toISOString().slice(0, 10);
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const thisMonth = await query(
-      'SELECT COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue FROM sales_orders WHERE order_date >= ?',
-      [thisMonthStart]
+    const today = await query(
+      'SELECT COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue FROM sales_orders WHERE DATE(order_date) = ?',
+      [todayStart]
     );
-    const lastMonth = await query(
-      'SELECT COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue FROM sales_orders WHERE order_date >= ? AND order_date <= ?',
-      [lastMonthStart, lastMonthEnd + ' 23:59:59']
+    const yest = await query(
+      'SELECT COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue FROM sales_orders WHERE DATE(order_date) = ?',
+      [yesterday]
     );
 
-    const thisRevenue = Number(thisMonth[0].revenue);
-    const thisOrders = Number(thisMonth[0].orders);
-    const lastRevenue = Number(lastMonth[0].revenue);
-    const avgPrice = thisOrders > 0 ? Math.round(thisRevenue / thisOrders) : 0;
-    const growthRate = lastRevenue > 0 ? Math.round((thisRevenue - lastRevenue) / lastRevenue * 100) : null;
+    const todayRevenue = Number(today[0].revenue);
+    const todayOrders = Number(today[0].orders);
+    const yesterdayRevenue = Number(yest[0].revenue);
+    const yesterdayOrders = Number(yest[0].orders);
+    const avgPrice = todayOrders > 0 ? Math.round(todayRevenue / todayOrders) : 0;
 
     res.json({
-      thisMonthRevenue: thisRevenue,
-      thisMonthOrders: thisOrders,
+      todayRevenue,
+      todayOrders,
       avgPrice,
-      lastMonthRevenue: lastRevenue,
-      growthRate,
+      yesterdayRevenue,
+      yesterdayOrders,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /api/sales/summary - 일별/월별 집계
-app.get('/api/sales/summary', async (req, res) => {
-  try {
-    const { period, startDate, endDate, store } = req.query;
-    const conditions = [];
-    const params = [];
-
-    if (startDate) {
-      conditions.push('order_date >= ?');
-      params.push(startDate);
-    }
-    if (endDate) {
-      conditions.push('order_date <= ?');
-      params.push(endDate + ' 23:59:59');
-    }
-    if (store && store !== 'all') {
-      conditions.push('store = ?');
-      params.push(store);
-    }
-
-    const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
-
-    let groupBy, dateExpr;
-    if (period === 'monthly') {
-      dateExpr = "DATE_FORMAT(order_date, '%Y-%m')";
-      groupBy = dateExpr;
-    } else {
-      dateExpr = 'DATE(order_date)';
-      groupBy = dateExpr;
-    }
-
-    const rows = await query(
-      `SELECT ${dateExpr} as date_key, COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue, COALESCE(SUM(qty), 0) as total_qty
-       FROM sales_orders ${where}
-       GROUP BY ${groupBy}
-       ORDER BY date_key DESC
-       LIMIT 60`,
-      params
-    );
-
-    res.json(rows.map(r => ({
-      date: r.date_key,
-      orders: Number(r.orders),
-      revenue: Number(r.revenue),
-      totalQty: Number(r.total_qty),
-      avgPrice: Number(r.orders) > 0 ? Math.round(Number(r.revenue) / Number(r.orders)) : 0,
-    })));
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// GET /api/sales/recent - 최근 주문 목록
+// GET /api/sales/recent - 주문 목록 (날짜 필터 지원)
 app.get('/api/sales/recent', async (req, res) => {
   try {
-    const { store, limit: lim } = req.query;
+    const { store, limit: lim, date } = req.query;
     const conditions = [];
     const params = [];
 
     if (store && store !== 'all') {
       conditions.push('store = ?');
       params.push(store);
+    }
+    if (date) {
+      conditions.push('DATE(order_date) = ?');
+      params.push(date);
     }
 
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';

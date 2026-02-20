@@ -837,67 +837,6 @@
         .summary-card .summary-value { font-size: 28px; font-weight: 700; color: var(--text-primary); }
         .summary-card .summary-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
         .sales-summary-cards { grid-template-columns: repeat(4, 1fr); }
-        .sales-filter-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .sales-filter-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .sales-period-toggle {
-            display: flex;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            overflow: hidden;
-        }
-        .sales-period-btn {
-            border: none;
-            border-radius: 0;
-            background: var(--bg-card);
-            color: var(--text-secondary);
-            padding: 6px 14px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.15s;
-        }
-        .sales-period-btn.active {
-            background: var(--accent);
-            color: white;
-        }
-        .sales-store-select {
-            padding: 6px 10px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            font-size: 13px;
-            background: var(--bg-card);
-            color: var(--text-primary);
-        }
-        .sales-date-input {
-            padding: 6px 10px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            font-size: 13px;
-            background: var(--bg-card);
-            color: var(--text-primary);
-        }
-        .sales-growth-up { color: var(--success); }
-        .sales-growth-down { color: var(--danger); }
-        .store-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-        .store-badge-a { background: var(--accent-light); color: var(--accent); }
-        .store-badge-b { background: #FDF2F8; color: #DB2777; }
         .settings-section { margin-bottom: 24px; }
         .settings-section h3 {
             font-size: 15px;
@@ -987,7 +926,6 @@
         @media (max-width: 1024px) {
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
             .summary-cards { grid-template-columns: repeat(2, 1fr); }
-            .sales-summary-cards { grid-template-columns: repeat(2, 1fr); }
         }
 
         /* ===== 32. Responsive: Mobile ===== */
@@ -1098,9 +1036,6 @@
 
             .toast { bottom: 16px; left: 16px; right: 16px; text-align: center; }
             .summary-cards { grid-template-columns: 1fr; }
-            .sales-summary-cards { grid-template-columns: repeat(2, 1fr); }
-            .sales-filter-bar { flex-direction: column; align-items: stretch; }
-            .sales-filter-group { flex-wrap: wrap; }
             .brand-card-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
             .setting-row { flex-direction: column; align-items: flex-start; gap: 8px; }
             .setting-row input[type="text"], .setting-row select { width: 100%; }
@@ -1171,7 +1106,7 @@
                 </a>
                 <a href="#sales" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    매출 현황
+                    오늘 현황
                 </a>
                 <a href="#log" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -1335,81 +1270,44 @@
                 </div>
             </section>
 
-            <!-- ===== PAGE: Sales ===== -->
+            <!-- ===== PAGE: Sales (오늘 현황) ===== -->
             <section class="page-section" id="page-sales" style="display:none">
                 <!-- 요약 카드 -->
                 <div class="summary-cards sales-summary-cards">
                     <div class="summary-card">
-                        <div class="summary-value" id="salesRevenue">-</div>
-                        <div class="summary-label">이번 달 매출</div>
+                        <div class="summary-value" id="salesTodayRevenue">-</div>
+                        <div class="summary-label">오늘 매출</div>
                     </div>
                     <div class="summary-card">
-                        <div class="summary-value" id="salesOrders">-</div>
-                        <div class="summary-label">주문 수</div>
+                        <div class="summary-value" id="salesTodayOrders">-</div>
+                        <div class="summary-label">오늘 주문</div>
                     </div>
                     <div class="summary-card">
-                        <div class="summary-value" id="salesAvgPrice">-</div>
+                        <div class="summary-value" id="salesTodayAvg">-</div>
                         <div class="summary-label">평균 단가</div>
                     </div>
                     <div class="summary-card">
-                        <div class="summary-value" id="salesGrowth">-</div>
-                        <div class="summary-label">전월 대비</div>
+                        <div class="summary-value" id="salesYestComp">-</div>
+                        <div class="summary-label">어제 매출</div>
                     </div>
                 </div>
 
-                <!-- 필터 영역 -->
+                <!-- 오늘 주문 목록 -->
                 <div class="shell-card">
-                    <div class="sales-filter-bar">
-                        <div class="sales-filter-group">
-                            <div class="sales-period-toggle">
-                                <button class="btn btn-sm sales-period-btn active" data-period="daily">일별</button>
-                                <button class="btn btn-sm sales-period-btn" data-period="monthly">월별</button>
-                            </div>
-                            <select class="sales-store-select" id="salesStoreFilter">
-                                <option value="all">전체 스토어</option>
-                                <option value="A">A 스토어</option>
-                                <option value="B">B 스토어</option>
-                            </select>
-                            <input type="date" class="sales-date-input" id="salesStartDate">
-                            <span style="color:var(--text-muted)">~</span>
-                            <input type="date" class="sales-date-input" id="salesEndDate">
-                        </div>
+                    <div class="shell-header">
+                        <h2>오늘 주문 목록</h2>
                         <button class="btn btn-accent btn-sm" id="salesFetchBtn" onclick="fetchSalesNow()">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                             데이터 수집
                         </button>
                     </div>
-                </div>
-
-                <!-- 집계 테이블 -->
-                <div class="shell-card">
-                    <div class="shell-header">
-                        <h2>매출 집계</h2>
-                    </div>
-                    <div style="overflow-x:auto">
-                        <table class="shell-table" id="salesSummaryTable">
-                            <thead>
-                                <tr><th>날짜</th><th>주문수</th><th style="text-align:right">매출액</th><th style="text-align:right">평균단가</th></tr>
-                            </thead>
-                            <tbody id="salesSummaryBody">
-                                <tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">데이터를 불러오는 중...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 최근 주문 목록 -->
-                <div class="shell-card">
-                    <div class="shell-header">
-                        <h2>최근 주문</h2>
-                    </div>
                     <div style="overflow-x:auto">
                         <table class="shell-table" id="salesRecentTable">
                             <thead>
-                                <tr><th>일시</th><th>스토어</th><th>상품명</th><th style="text-align:right">수량</th><th style="text-align:right">금액</th></tr>
+                                <tr><th>시간</th><th>상품명</th><th style="text-align:right">수량</th><th style="text-align:right">금액</th></tr>
                             </thead>
                             <tbody id="salesRecentBody">
-                                <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted);">데이터를 불러오는 중...</td></tr>
+                                <tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">데이터를 불러오는 중...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -1713,7 +1611,7 @@
     // ===== Router =====
     const pageTitles = {
         'inventory': '재고 관리',
-        'sales': '매출 현황',
+        'sales': '오늘 현황',
         'log': '동기화 로그',
         'brands': '브랜드 관리',
         'settings': '설정',
@@ -2645,120 +2543,47 @@
         }
     }
 
-    // ===== Sales Page =====
-    let salesPeriod = 'daily';
+    // ===== Sales Page (오늘 현황) =====
 
     function loadSalesPage() {
-        // 기본 날짜 범위 설정 (최근 30일)
-        const now = new Date();
-        const endDate = now.toISOString().slice(0, 10);
-        const startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-        document.getElementById('salesStartDate').value = startDate;
-        document.getElementById('salesEndDate').value = endDate;
-
-        // 이벤트 리스너 (중복 방지)
-        document.querySelectorAll('.sales-period-btn').forEach(btn => {
-            btn.onclick = () => {
-                document.querySelectorAll('.sales-period-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                salesPeriod = btn.dataset.period;
-                loadSalesSummary();
-            };
-        });
-        document.getElementById('salesStoreFilter').onchange = () => {
-            loadSalesSummary();
-            loadRecentOrders();
-        };
-        document.getElementById('salesStartDate').onchange = () => loadSalesSummary();
-        document.getElementById('salesEndDate').onchange = () => loadSalesSummary();
-
         loadSalesStats();
-        loadSalesSummary();
-        loadRecentOrders();
+        loadTodayOrders();
     }
 
     async function loadSalesStats() {
         try {
             const res = await fetch('/api/sales/stats');
             const data = await res.json();
-            document.getElementById('salesRevenue').textContent = formatCurrency(data.thisMonthRevenue);
-            document.getElementById('salesOrders').textContent = data.thisMonthOrders.toLocaleString();
-            document.getElementById('salesAvgPrice').textContent = formatCurrency(data.avgPrice);
-
-            const growthEl = document.getElementById('salesGrowth');
-            if (data.growthRate !== null) {
-                const sign = data.growthRate >= 0 ? '+' : '';
-                growthEl.textContent = `${sign}${data.growthRate}%`;
-                growthEl.className = 'summary-value ' + (data.growthRate >= 0 ? 'sales-growth-up' : 'sales-growth-down');
-            } else {
-                growthEl.textContent = '-';
-                growthEl.className = 'summary-value';
-            }
+            document.getElementById('salesTodayRevenue').textContent = formatCurrency(data.todayRevenue);
+            document.getElementById('salesTodayOrders').textContent = data.todayOrders + '건';
+            document.getElementById('salesTodayAvg').textContent = formatCurrency(data.avgPrice);
+            document.getElementById('salesYestComp').textContent = formatCurrency(data.yesterdayRevenue);
         } catch (e) {
             console.error('매출 통계 로딩 오류:', e);
         }
     }
 
-    async function loadSalesSummary() {
-        const store = document.getElementById('salesStoreFilter').value;
-        const startDate = document.getElementById('salesStartDate').value;
-        const endDate = document.getElementById('salesEndDate').value;
-        const params = new URLSearchParams({ period: salesPeriod });
-        if (startDate) params.set('startDate', startDate);
-        if (endDate) params.set('endDate', endDate);
-        if (store !== 'all') params.set('store', store);
-
+    async function loadTodayOrders() {
         try {
-            const res = await fetch(`/api/sales/summary?${params}`);
-            const data = await res.json();
-            const tbody = document.getElementById('salesSummaryBody');
-
-            if (!data || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">매출 데이터가 없습니다.</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = data.map(row => `
-                <tr>
-                    <td>${row.date}</td>
-                    <td>${row.orders.toLocaleString()}건</td>
-                    <td style="text-align:right;font-weight:600">${formatCurrency(row.revenue)}</td>
-                    <td style="text-align:right">${formatCurrency(row.avgPrice)}</td>
-                </tr>
-            `).join('');
-        } catch (e) {
-            console.error('매출 집계 로딩 오류:', e);
-        }
-    }
-
-    async function loadRecentOrders() {
-        const store = document.getElementById('salesStoreFilter').value;
-        const params = new URLSearchParams({ limit: '30' });
-        if (store !== 'all') params.set('store', store);
-
-        try {
-            const res = await fetch(`/api/sales/recent?${params}`);
+            const today = new Date().toISOString().slice(0, 10);
+            const res = await fetch(`/api/sales/recent?limit=100&date=${today}`);
             const data = await res.json();
             const tbody = document.getElementById('salesRecentBody');
 
             if (!data || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted);">최근 주문 데이터가 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">오늘 주문이 아직 없습니다.</td></tr>';
                 return;
             }
 
             tbody.innerHTML = data.map(row => {
                 const date = new Date(row.order_date);
-                const dateStr = `${date.getMonth()+1}/${date.getDate()} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
-                const storeBadge = row.store === 'A'
-                    ? '<span class="store-badge store-badge-a">A</span>'
-                    : '<span class="store-badge store-badge-b">B</span>';
-                const name = (row.product_name || '').length > 30
-                    ? row.product_name.slice(0, 30) + '...'
+                const timeStr = `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+                const name = (row.product_name || '').length > 35
+                    ? row.product_name.slice(0, 35) + '...'
                     : (row.product_name || '-');
                 return `
                     <tr>
-                        <td>${dateStr}</td>
-                        <td>${storeBadge}</td>
+                        <td>${timeStr}</td>
                         <td title="${row.product_name || ''}">${name}</td>
                         <td style="text-align:right">${row.qty}</td>
                         <td style="text-align:right;font-weight:600">${formatCurrency(row.total_amount)}</td>
@@ -2766,7 +2591,7 @@
                 `;
             }).join('');
         } catch (e) {
-            console.error('최근 주문 로딩 오류:', e);
+            console.error('오늘 주문 로딩 오류:', e);
         }
     }
 
@@ -2779,7 +2604,7 @@
             const res = await fetch('/api/sales/fetch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ resetDays: 30 }),
+                body: JSON.stringify({}),
             });
             const data = await res.json();
             if (data.errors && data.errors.length > 0) {
@@ -2790,10 +2615,9 @@
                     : data.errors.join('; ');
                 showToast(msg, 'error');
             } else if (data.success) {
-                showToast(`매출 데이터 ${data.inserted}건 수집 완료`, data.inserted > 0 ? 'success' : 'info');
+                showToast(`${data.inserted}건 수집 완료`, data.inserted > 0 ? 'success' : 'info');
                 loadSalesStats();
-                loadSalesSummary();
-                loadRecentOrders();
+                loadTodayOrders();
             } else {
                 showToast(data.error || '수집 실패', 'error');
             }
