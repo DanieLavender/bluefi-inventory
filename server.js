@@ -320,23 +320,19 @@ app.get('/api/sales/debug-fetch', async (req, res) => {
     const chunkEnd = now;
     const extracted = details.map((detail, idx) => {
       const po = detail.productOrder || detail;
+      const order = detail.order || {};
       return {
         idx,
-        detailKeys: Object.keys(detail),
-        hasProductOrder: !!detail.productOrder,
-        poType: typeof detail.productOrder,
-        // 날짜 필드 원본값
-        rawPlaceOrderDate: detail.productOrder?.placeOrderDate,
-        rawPaymentDate: detail.productOrder?.paymentDate,
-        rawOrderDate: detail.productOrder?.orderDate,
-        // po 경유 값
+        // order 객체 전체 키 + 날짜 관련 필드
+        orderKeys: Object.keys(order),
+        orderPaymentDate: order.paymentDate,
+        orderOrderDate: order.orderDate,
+        orderPlaceOrderDate: order.placeOrderDate,
+        // productOrder 날짜 필드
         poPlaceOrderDate: po.placeOrderDate,
         poPaymentDate: po.paymentDate,
         poOrderDate: po.orderDate,
-        // 최종 계산값
-        finalOrderDate: po.placeOrderDate || po.paymentDate || po.orderDate || chunkEnd.toISOString(),
-        fallbackUsed: !po.placeOrderDate && !po.paymentDate && !po.orderDate,
-        // 기타 필드
+        // 기타
         productOrderId: po.productOrderId,
         productName: (po.productName || '').slice(0, 30),
       };
