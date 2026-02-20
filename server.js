@@ -300,30 +300,45 @@ app.post('/api/sales/fetch', async (req, res) => {
   try {
     await initSyncClients();
 
+    const { resetDays } = req.body || {};
     const stores = [
       { key: 'A', client: scheduler.storeA, configKey: 'sales_last_fetch_a' },
       { key: 'B', client: scheduler.storeB, configKey: 'sales_last_fetch_b' },
     ];
 
+    // 리셋 요청 시 last_fetch 초기화
+    if (resetDays) {
+      const resetTime = new Date(Date.now() - resetDays * 24 * 60 * 60 * 1000).toISOString();
+      for (const s of stores) {
+        await scheduler.setConfig(s.configKey, resetTime);
+      }
+      console.log(`[Sales] last_fetch 리셋: ${resetDays}일 전으로`);
+    }
+
     let totalInserted = 0;
+    let totalFound = 0;
     const errors = [];
 
     for (const { key, client, configKey } of stores) {
       try {
         const lastFetch = await scheduler.getConfig(configKey);
         const now = new Date();
-        const from = lastFetch ? new Date(lastFetch) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const from = (lastFetch && lastFetch.length > 0) ? new Date(lastFetch) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
         console.log(`[Sales] Store ${key} 수집 시작: ${from.toISOString()} ~ ${now.toISOString()}`);
         let cursor = new Date(from);
         let storeInserted = 0;
+        let storeFound = 0;
 
         while (cursor < now) {
           const chunkEnd = new Date(Math.min(cursor.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
 
           try {
             const orderIds = await client.getOrders(cursor.toISOString(), chunkEnd.toISOString());
-            console.log(`[Sales] Store ${key} ${cursor.toISOString().slice(0,10)}: ${orderIds.length}건`);
+            storeFound += orderIds.length;
+            if (orderIds.length > 0) {
+              console.log(`[Sales] Store ${key} ${cursor.toISOString().slice(0,10)}: ${orderIds.length}건 발견`);
+            }
 
             if (orderIds.length > 0) {
               const batchSize = 50;
@@ -366,6 +381,7 @@ app.post('/api/sales/fetch', async (req, res) => {
               }
             }
           } catch (chunkErr) {
+            errors.push(`Store ${key}: ${chunkErr.message}`);
             console.log(`[Sales] Store ${key} 청크 오류 (${cursor.toISOString()}):`, chunkErr.message);
           }
 
@@ -373,9 +389,13 @@ app.post('/api/sales/fetch', async (req, res) => {
           await new Promise(r => setTimeout(r, 300));
         }
 
-        await scheduler.setConfig(configKey, now.toISOString());
+        // 에러 없이 완료된 경우에만 last_fetch 갱신
+        if (!errors.some(e => e.startsWith(`Store ${key}`))) {
+          await scheduler.setConfig(configKey, now.toISOString());
+        }
         totalInserted += storeInserted;
-        console.log(`[Sales] Store ${key} 수집 완료: ${storeInserted}건`);
+        totalFound += storeFound;
+        console.log(`[Sales] Store ${key} 수집 완료: 발견 ${storeFound}건, 신규 ${storeInserted}건`);
       } catch (storeErr) {
         errors.push(`Store ${key}: ${storeErr.message}`);
         console.error(`[Sales] Store ${key} 오류:`, storeErr.message);

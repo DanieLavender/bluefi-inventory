@@ -2776,7 +2776,11 @@
         btn.textContent = '수집 중...';
 
         try {
-            const res = await fetch('/api/sales/fetch', { method: 'POST' });
+            const res = await fetch('/api/sales/fetch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resetDays: 30 }),
+            });
             const data = await res.json();
             if (data.errors && data.errors.length > 0) {
                 const msg = data.errors[0].includes('IP_NOT_ALLOWED')
