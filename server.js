@@ -295,6 +295,39 @@ app.get('/api/sales/recent', async (req, res) => {
   }
 });
 
+// GET /api/sales/debug - 주문 API 원본 응답 디버그
+app.get('/api/sales/debug', async (req, res) => {
+  try {
+    await initSyncClients();
+    const now = new Date();
+    const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const types = ['PAYED', 'DELIVERED', 'PURCHASE_DECIDED'];
+    const results = {};
+
+    for (const t of types) {
+      try {
+        const params = new URLSearchParams({
+          lastChangedFrom: from.toISOString(),
+          lastChangedTo: now.toISOString(),
+          lastChangedType: t,
+        });
+        const data = await scheduler.storeA.apiCall(
+          'GET',
+          `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
+        );
+        const count = data?.data?.lastChangeStatuses?.length || 0;
+        results[t] = { count, sample: data?.data?.lastChangeStatuses?.slice(0, 2) || [] };
+      } catch (e) {
+        results[t] = { error: e.message };
+      }
+    }
+
+    res.json({ queryRange: { from: from.toISOString(), to: now.toISOString() }, results });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/sales/fetch - 수동 매출 데이터 수집
 app.post('/api/sales/fetch', async (req, res) => {
   try {
