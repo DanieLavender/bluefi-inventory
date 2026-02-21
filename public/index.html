@@ -2160,7 +2160,7 @@
     let searchTimer = null;
     let pendingDeleteIds = [];
     let viewMode = localStorage.getItem('viewMode') || 'flat';
-    let expandedGroups = new Set();
+    let collapsedGroups = new Set();
 
     // ===== Router =====
     const pageTitles = {
@@ -2409,14 +2409,14 @@
         document.getElementById('viewFlatBtn').classList.toggle('active', mode === 'flat');
         document.getElementById('viewGroupBtn').classList.toggle('active', mode === 'grouped');
         document.getElementById('sortSelect').disabled = (mode === 'grouped');
-        expandedGroups.clear();
+        collapsedGroups.clear();
         currentPage = 1;
         loadData();
     }
 
     function toggleGroup(groupName) {
-        if (expandedGroups.has(groupName)) expandedGroups.delete(groupName);
-        else expandedGroups.add(groupName);
+        if (collapsedGroups.has(groupName)) collapsedGroups.delete(groupName);
+        else collapsedGroups.add(groupName);
         render();
     }
 
@@ -2570,8 +2570,8 @@
                 ? `<span class="brand-badge ${brandClass}">${group.brand}</span>`
                 : '';
             const variantCount = group.variants.length;
-            const isExpanded = expandedGroups.has(group.name) || variantCount === 1;
-            const toggleIcon = variantCount === 1 ? '' : `<span class="group-toggle-icon ${isExpanded ? 'expanded' : ''}">&#9654;</span>`;
+            const isExpanded = !collapsedGroups.has(group.name);
+            const toggleIcon = `<span class="group-toggle-icon ${isExpanded ? 'expanded' : ''}">&#9654;</span>`;
             const escapedName = escapeAttr(group.name);
 
             tableHtml += `<tr class="group-header-row" onclick="toggleGroup('${escapedName}')">
@@ -2630,8 +2630,8 @@
                 ? `<span class="brand-badge ${brandClass}" style="font-size:10px;padding:1px 5px;">${group.brand}</span>`
                 : '';
             const variantCount = group.variants.length;
-            const isExpanded = expandedGroups.has(group.name) || variantCount === 1;
-            const toggleIcon = variantCount === 1 ? '' : `<span class="group-toggle-icon ${isExpanded ? 'expanded' : ''}">&#9654;</span>`;
+            const isExpanded = !collapsedGroups.has(group.name);
+            const toggleIcon = `<span class="group-toggle-icon ${isExpanded ? 'expanded' : ''}">&#9654;</span>`;
             const escapedName = escapeAttr(group.name);
 
             cardHtml += `<div class="group-card">
