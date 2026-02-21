@@ -641,8 +641,10 @@ class SyncScheduler {
             payload
           );
         } catch (e) {
+          console.log(`[Push] 발송 실패 (sub ${sub.id}): status=${e.statusCode}, ${e.message}`);
           if (e.statusCode === 404 || e.statusCode === 410) {
             await query('DELETE FROM push_subscriptions WHERE id = ?', [sub.id]);
+            console.log(`[Push] 만료된 구독 삭제: ${sub.id}`);
           }
         }
       }

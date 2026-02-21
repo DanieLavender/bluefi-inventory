@@ -1084,17 +1084,24 @@ app.post('/api/push/test', async (req, res) => {
 
     const payload = JSON.stringify({ title: '블루파이', body: '✅ 푸시 알림 테스트 성공!' });
     let sent = 0;
+    const errors = [];
     for (const sub of subs) {
       try {
         await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
         sent++;
       } catch (e) {
+        console.log(`[Push Test] 발송 실패 (sub ${sub.id}): status=${e.statusCode}, ${e.message}`);
+        errors.push(`sub${sub.id}: ${e.statusCode || 'unknown'}`);
         if (e.statusCode === 404 || e.statusCode === 410) {
           await query('DELETE FROM push_subscriptions WHERE id = ?', [sub.id]);
         }
       }
     }
-    res.json({ success: true, message: `${sent}개 기기에 발송 완료` });
+    res.json({
+      success: sent > 0,
+      message: sent > 0 ? `${sent}/${subs.length}개 기기에 발송 완료` : `발송 실패 (${subs.length}개 구독 중 0개 성공)`,
+      errors: errors.length > 0 ? errors : undefined,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1190,10 +1197,19 @@ async function initCoupangClient() {
         const body = commitMsg
           ? `${commitMsg} (${shortHash})`
           : `새 버전으로 업데이트되었습니다. (${shortHash})`;
-        await scheduler.sendPushNotification('앱 업데이트', body);
         console.log(`[Update] 새 버전 감지: ${storedVersion?.slice(0,7) || 'none'} → ${shortHash} — ${commitMsg || '(메시지 없음)'}`);
+        try {
+          await scheduler.sendPushNotification('앱 업데이트', body);
+          console.log('[Update] 푸시 알림 발송 완료');
+        } catch (pushErr) {
+          console.error('[Update] 푸시 알림 발송 실패:', pushErr.message);
+        }
+      } else {
+        console.log(`[Update] 버전 동일: ${currentVersion.slice(0,7)}`);
       }
       await scheduler.setConfig('app_version', currentVersion);
+    } else {
+      console.log('[Update] RENDER_GIT_COMMIT 미설정');
     }
   } catch (e) {
     console.log('[Update] 버전 확인 오류:', e.message);
