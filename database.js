@@ -144,6 +144,9 @@ async function initDb() {
     ['coupang_access_key', ''],
     ['coupang_secret_key', ''],
     ['coupang_vendor_id', ''],
+    ['telegram_bot_token', ''],
+    ['telegram_chat_id', ''],
+    ['telegram_enabled', 'false'],
   ];
   for (const [k, v] of configDefaults) {
     await query(

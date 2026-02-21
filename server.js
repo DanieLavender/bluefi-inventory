@@ -736,6 +736,9 @@ app.get('/api/sync/config', async (req, res) => {
     config.coupang_access_key = cAccessKey ? maskSecret(cAccessKey) : '';
     config.coupang_secret_key = cSecretKey ? '****' : '';
     config.coupang_vendor_id = cVendorId || '';
+    // 텔레그램
+    const tgToken = config.telegram_bot_token || '';
+    config.telegram_bot_token = tgToken ? maskSecret(tgToken) : '';
     res.json(config);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -841,7 +844,8 @@ app.post('/api/sync/save-keys', async (req, res) => {
   try {
     const { store_a_client_id, store_a_client_secret, store_b_client_id, store_b_client_secret,
             store_b_display_status, store_b_sale_status, store_b_name_prefix,
-            coupang_access_key, coupang_secret_key, coupang_vendor_id } = req.body;
+            coupang_access_key, coupang_secret_key, coupang_vendor_id,
+            telegram_bot_token, telegram_chat_id, telegram_enabled } = req.body;
     const upsertSql = 'INSERT INTO sync_config (`key`, value, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()';
     if (store_a_client_id) await query(upsertSql, ['store_a_client_id', store_a_client_id]);
     if (store_a_client_secret) await query(upsertSql, ['store_a_client_secret', store_a_client_secret]);
@@ -854,6 +858,10 @@ app.post('/api/sync/save-keys', async (req, res) => {
     if (coupang_access_key) await query(upsertSql, ['coupang_access_key', coupang_access_key]);
     if (coupang_secret_key) await query(upsertSql, ['coupang_secret_key', coupang_secret_key]);
     if (coupang_vendor_id) await query(upsertSql, ['coupang_vendor_id', coupang_vendor_id]);
+    // 텔레그램
+    if (telegram_bot_token !== undefined) await query(upsertSql, ['telegram_bot_token', telegram_bot_token]);
+    if (telegram_chat_id !== undefined) await query(upsertSql, ['telegram_chat_id', telegram_chat_id]);
+    if (telegram_enabled !== undefined) await query(upsertSql, ['telegram_enabled', telegram_enabled]);
     scheduler.storeA = null;
     scheduler.storeB = null;
     res.json({ success: true });
@@ -872,6 +880,29 @@ app.post('/api/coupang/test-connection', async (req, res) => {
     const client = new CoupangClient(accessKey, secretKey, vendorId, 'Coupang-Test');
     const result = await client.testConnection();
     res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/telegram/test - 텔레그램 테스트 메시지 발송
+app.post('/api/telegram/test', async (req, res) => {
+  try {
+    const { botToken, chatId } = req.body;
+    if (!botToken || !chatId) {
+      return res.status(400).json({ error: 'Bot Token과 Chat ID를 입력해주세요.' });
+    }
+    const r = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: '✅ 블루파이 재고관리 알림 테스트 성공!' }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      res.json({ success: true, message: '테스트 메시지 발송 성공' });
+    } else {
+      res.json({ success: false, message: data.description || '발송 실패' });
+    }
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

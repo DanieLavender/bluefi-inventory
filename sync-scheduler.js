@@ -402,11 +402,43 @@ class SyncScheduler {
         `B 스토어에 신규 등록 완료 (수량: ${qty})`);
 
       console.log(`[Sync] B 스토어 신규 등록: ${productName} (수량: ${qty})`);
+
+      // 텔레그램 알림
+      const now = new Date();
+      const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      await this.sendTelegramNotification(
+        `🔔 B스토어 신규 상품 등록\n\n상품: ${productName}\n옵션: ${optionName || '없음'}\n수량: ${qty}개\n시간: ${timeStr}`
+      );
     } catch (e) {
       await this.logSync(runId, 'product_create', 'A', 'B', productOrderId, channelProductNo,
         productName, optionName, qty, 'fail', e.message);
       console.error(`[Sync] B 스토어 상품 생성 오류: ${productName}`, e.message);
       throw e;
+    }
+  }
+
+  // === Telegram notification ===
+
+  async sendTelegramNotification(text) {
+    try {
+      const enabled = await this.getConfig('telegram_enabled');
+      if (enabled !== 'true') return;
+
+      const token = await this.getConfig('telegram_bot_token');
+      const chatId = await this.getConfig('telegram_chat_id');
+      if (!token || !chatId) return;
+
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        console.log(`[Telegram] 발송 실패: ${err.slice(0, 200)}`);
+      }
+    } catch (e) {
+      console.log(`[Telegram] 오류: ${e.message}`);
     }
   }
 

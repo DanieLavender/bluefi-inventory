@@ -1527,6 +1527,29 @@
                             </div>
                         </div>
 
+                        <!-- 텔레그램 알림 -->
+                        <div style="margin-bottom:16px;padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);">
+                            <div style="font-size:13px;font-weight:600;margin-bottom:10px;">텔레그램 알림</div>
+                            <div class="setting-row">
+                                <label>Bot Token</label>
+                                <input type="password" id="telegramBotToken" placeholder="@BotFather에서 발급">
+                            </div>
+                            <div class="setting-row">
+                                <label>Chat ID</label>
+                                <input type="text" id="telegramChatId" placeholder="숫자 Chat ID">
+                            </div>
+                            <div class="setting-row">
+                                <label>알림 활성화</label>
+                                <div class="toggle-switch" id="telegramToggle" onclick="toggleTelegram()"></div>
+                            </div>
+                            <div style="font-size:11px;color:var(--text-secondary);margin-top:6px;">
+                                B 스토어에 새 상품이 등록되면 텔레그램으로 알림을 보냅니다.
+                            </div>
+                            <div style="text-align:right;margin-top:8px;">
+                                <button class="btn btn-outline btn-sm" onclick="testTelegram()">테스트 발송</button>
+                            </div>
+                        </div>
+
                         <!-- B 스토어 상품 상태 설정 -->
                         <div style="margin-bottom:16px;padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);">
                             <div style="font-size:13px;font-weight:600;margin-bottom:10px;">B 스토어 복사 상품 상태</div>
@@ -2465,6 +2488,17 @@
             document.getElementById('coupangVendorId').value = config.coupang_vendor_id || '';
             if (config.coupang_access_key) document.getElementById('coupangAccessKey').value = '';
 
+            // 텔레그램
+            document.getElementById('telegramBotToken').placeholder = config.telegram_bot_token || 'Bot Token 입력';
+            document.getElementById('telegramChatId').value = config.telegram_chat_id || '';
+            if (config.telegram_bot_token) document.getElementById('telegramBotToken').value = '';
+            const tgToggle = document.getElementById('telegramToggle');
+            if (config.telegram_enabled === 'true') {
+                tgToggle.classList.add('active');
+            } else {
+                tgToggle.classList.remove('active');
+            }
+
             // Interval
             const interval = config.sync_interval_minutes || '5';
             document.getElementById('syncInterval').value = interval;
@@ -2519,6 +2553,12 @@
         if (cAccessKey) body.coupang_access_key = cAccessKey;
         if (cSecretKey) body.coupang_secret_key = cSecretKey;
         if (cVendorId) body.coupang_vendor_id = cVendorId;
+        // 텔레그램
+        const tgToken = document.getElementById('telegramBotToken').value.trim();
+        const tgChatId = document.getElementById('telegramChatId').value.trim();
+        if (tgToken) body.telegram_bot_token = tgToken;
+        if (tgChatId) body.telegram_chat_id = tgChatId;
+        body.telegram_enabled = document.getElementById('telegramToggle').classList.contains('active') ? 'true' : 'false';
 
         try {
             await api('/api/sync/save-keys', {
@@ -2581,6 +2621,33 @@
         } catch (e) {
             showToast('연결 테스트 실패: ' + e.message, 'error');
         }
+    }
+
+    async function testTelegram() {
+        const botToken = document.getElementById('telegramBotToken').value.trim();
+        const chatId = document.getElementById('telegramChatId').value.trim();
+        if (!botToken || !chatId) {
+            showToast('Bot Token과 Chat ID를 입력해주세요.', 'error');
+            return;
+        }
+        try {
+            showToast('텔레그램 테스트 발송 중...', 'info');
+            const result = await api('/api/telegram/test', {
+                method: 'POST',
+                body: JSON.stringify({ botToken, chatId })
+            });
+            if (result.success) {
+                showToast('텔레그램 테스트 메시지 발송 성공!', 'success');
+            } else {
+                showToast('발송 실패: ' + result.message, 'error');
+            }
+        } catch (e) {
+            showToast('테스트 실패: ' + e.message, 'error');
+        }
+    }
+
+    function toggleTelegram() {
+        document.getElementById('telegramToggle').classList.toggle('active');
     }
 
     async function toggleSyncEnabled() {
