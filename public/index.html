@@ -3922,28 +3922,8 @@
     }
 
     function loadSalesPage() {
-        // 1) DB 데이터 즉시 표시
         loadSalesStats();
         loadTodayOrders();
-        // 2) 백그라운드 수집 (UI 블로킹 없음)
-        fetchSalesBackground();
-    }
-
-    function fetchSalesBackground() {
-        fetch('/api/sales/fetch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success && data.inserted > 0) {
-                loadSalesStats();
-                loadTodayOrders();
-                showToast(`신규 ${data.inserted}건 수집됨`, 'success');
-            }
-        })
-        .catch(() => {});
     }
 
     async function loadSalesStats() {
