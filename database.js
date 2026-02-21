@@ -37,6 +37,13 @@ async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
+  // inventory에 channel_product_no 컬럼 추가 (점진적 스토어↔재고 연결용)
+  try {
+    await query(`ALTER TABLE inventory ADD COLUMN channel_product_no VARCHAR(255) DEFAULT NULL`);
+  } catch (e) {
+    // 이미 존재하면 무시 (ER_DUP_FIELDNAME)
+  }
+
   await query(`
     CREATE TABLE IF NOT EXISTS sync_log (
       id INT AUTO_INCREMENT PRIMARY KEY,

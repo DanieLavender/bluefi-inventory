@@ -217,8 +217,8 @@ class SyncScheduler {
 
     // B 스토어 처리 성공 후 → inventory 테이블에 재고 반영
     try {
-      const invResult = await this.updateInventoryFromReturn(runId, productName, optionName, qty);
-      if (invResult) {
+      const invResult = await this.updateInventoryFromReturn(runId, productOrderId, channelProductNo, productName, optionName, qty);
+      if (invResult && invResult.action !== 'skipped') {
         const invMsg = invResult.action === 'created'
           ? `신규 재고: ${invResult.name} (${invResult.color}) ${invResult.qty}개`
           : `재고 반영: ${productName} (${optionName || ''}) +${qty}개`;
@@ -231,7 +231,7 @@ class SyncScheduler {
 
   // === Update inventory from return ===
 
-  async updateInventoryFromReturn(runId, productName, optionName, qty) {
+  async updateInventoryFromReturn(runId, productOrderId, channelProductNo, productName, optionName, qty) {
     const color = (optionName || '').trim();
     if (!productName) {
       console.log(`[Sync→Inventory] 상품명 없음, 스킵`);
@@ -239,6 +239,18 @@ class SyncScheduler {
     }
 
     try {
+      // 0단계: productOrderId 중복 체크 — 이미 처리된 반품이면 스킵
+      if (productOrderId) {
+        const dupCheck = await query(
+          "SELECT id FROM sync_log WHERE type = 'inventory_update' AND product_order_id = ? AND status = 'success' LIMIT 1",
+          [productOrderId]
+        );
+        if (dupCheck.length > 0) {
+          console.log(`[Sync→Inventory] 이미 처리된 반품, 스킵: ${productOrderId}`);
+          return { action: 'skipped', reason: 'already_processed' };
+        }
+      }
+
       // 스토어 상품명 정규화: [hm], (오늘출발) 등 제거
       const cleanName = productName
         .replace(/\[.*?\]/g, '')
@@ -252,7 +264,45 @@ class SyncScheduler {
       // 핵심 키워드 (브랜드 제거)
       const keywords = cleanName.replace(/^[a-zA-Z]{2}\s+/, '').trim();
 
-      // 1단계: 정확 매칭 — name + color 일치
+      // 수동 반영 추정을 위한 last_sync_time
+      const lastSyncTime = await this.getConfig('last_sync_time');
+
+      // 1단계: channel_product_no로 직접 매칭 (이미 연결된 재고)
+      if (channelProductNo) {
+        let rows;
+        if (color) {
+          rows = await query(
+            'SELECT * FROM inventory WHERE channel_product_no = ? AND color = ? LIMIT 1',
+            [channelProductNo, color]
+          );
+        }
+        if (!rows || rows.length === 0) {
+          rows = await query(
+            'SELECT * FROM inventory WHERE channel_product_no = ? LIMIT 1',
+            [channelProductNo]
+          );
+        }
+        if (rows.length > 0) {
+          const item = rows[0];
+          // 수동 반영 추정: last_sync_time 이후에 수정된 항목이면 스킵
+          if (lastSyncTime && item.updated_at && new Date(item.updated_at) > new Date(lastSyncTime)) {
+            await this.logSync(runId, 'inventory_update', null, null, productOrderId, channelProductNo,
+              productName, optionName, qty, 'success',
+              `수동 반영 추정 → ${item.name} (${item.color}) 이미 수정됨, 스킵`);
+            console.log(`[Sync→Inventory] 수동 반영 추정, 스킵: ${item.name} (${item.color})`);
+            return { action: 'skipped', reason: 'manual_update_detected', inventoryId: item.id };
+          }
+          const newQty = item.qty + qty;
+          await query('UPDATE inventory SET qty = ?, updated_at = NOW() WHERE id = ?', [newQty, item.id]);
+          await this.logSync(runId, 'inventory_update', null, null, productOrderId, channelProductNo,
+            productName, optionName, qty, 'success',
+            `직접 매칭 → ${item.name} (${item.color}) ${item.qty}→${newQty}`);
+          console.log(`[Sync→Inventory] 직접 매칭: ${item.name} (${item.color}) ${item.qty}→${newQty}`);
+          return { action: 'updated', matchType: 'direct', inventoryId: item.id, oldQty: item.qty, newQty };
+        }
+      }
+
+      // 2단계: 텍스트 정확 매칭 (아직 연결 안 된 기존 재고)
       let rows = await query(
         'SELECT * FROM inventory WHERE name = ? AND color = ? LIMIT 1',
         [cleanName, color]
@@ -260,16 +310,35 @@ class SyncScheduler {
 
       if (rows.length > 0) {
         const item = rows[0];
+        // 수동 반영 추정
+        if (lastSyncTime && item.updated_at && new Date(item.updated_at) > new Date(lastSyncTime)) {
+          // 수량은 건드리지 않고 channel_product_no만 연결
+          if (channelProductNo && !item.channel_product_no) {
+            await query('UPDATE inventory SET channel_product_no = ? WHERE id = ?', [channelProductNo, item.id]);
+          }
+          await this.logSync(runId, 'inventory_update', null, null, productOrderId, channelProductNo,
+            productName, optionName, qty, 'success',
+            `수동 반영 추정 → ${item.name} (${item.color}) 이미 수정됨, 연결만 저장`);
+          console.log(`[Sync→Inventory] 수동 반영 추정, 연결만 저장: ${item.name} (${item.color})`);
+          return { action: 'skipped', reason: 'manual_update_detected', inventoryId: item.id };
+        }
         const newQty = item.qty + qty;
-        await query('UPDATE inventory SET qty = ?, updated_at = NOW() WHERE id = ?', [newQty, item.id]);
-        await this.logSync(runId, 'inventory_update', null, null, null, null,
+        // 수량 증가 + channel_product_no 점진적 연결
+        const updateSql = channelProductNo && !item.channel_product_no
+          ? 'UPDATE inventory SET qty = ?, updated_at = NOW(), channel_product_no = ? WHERE id = ?'
+          : 'UPDATE inventory SET qty = ?, updated_at = NOW() WHERE id = ?';
+        const updateParams = channelProductNo && !item.channel_product_no
+          ? [newQty, channelProductNo, item.id]
+          : [newQty, item.id];
+        await query(updateSql, updateParams);
+        await this.logSync(runId, 'inventory_update', null, null, productOrderId, channelProductNo,
           productName, optionName, qty, 'success',
-          `정확 매칭 → ${item.name} (${item.color}) ${item.qty}→${newQty}`);
+          `정확 매칭 → ${item.name} (${item.color}) ${item.qty}→${newQty}${!item.channel_product_no && channelProductNo ? ' [연결 저장]' : ''}`);
         console.log(`[Sync→Inventory] 정확 매칭: ${item.name} (${item.color}) ${item.qty}→${newQty}`);
         return { action: 'updated', matchType: 'exact', inventoryId: item.id, oldQty: item.qty, newQty };
       }
 
-      // 2단계: 유사 매칭 — 키워드 LIKE + 컬러 LIKE
+      // 3단계: 텍스트 유사 매칭
       if (keywords && color) {
         rows = await query(
           'SELECT * FROM inventory WHERE name LIKE ? AND color LIKE ? LIMIT 1',
@@ -278,39 +347,56 @@ class SyncScheduler {
 
         if (rows.length > 0) {
           const item = rows[0];
+          // 수동 반영 추정
+          if (lastSyncTime && item.updated_at && new Date(item.updated_at) > new Date(lastSyncTime)) {
+            if (channelProductNo && !item.channel_product_no) {
+              await query('UPDATE inventory SET channel_product_no = ? WHERE id = ?', [channelProductNo, item.id]);
+            }
+            await this.logSync(runId, 'inventory_update', null, null, productOrderId, channelProductNo,
+              productName, optionName, qty, 'success',
+              `수동 반영 추정 → ${item.name} (${item.color}) 이미 수정됨, 연결만 저장`);
+            console.log(`[Sync→Inventory] 수동 반영 추정, 연결만 저장: ${item.name} (${item.color})`);
+            return { action: 'skipped', reason: 'manual_update_detected', inventoryId: item.id };
+          }
           const newQty = item.qty + qty;
-          await query('UPDATE inventory SET qty = ?, updated_at = NOW() WHERE id = ?', [newQty, item.id]);
-          await this.logSync(runId, 'inventory_update', null, null, null, null,
+          const updateSql = channelProductNo && !item.channel_product_no
+            ? 'UPDATE inventory SET qty = ?, updated_at = NOW(), channel_product_no = ? WHERE id = ?'
+            : 'UPDATE inventory SET qty = ?, updated_at = NOW() WHERE id = ?';
+          const updateParams = channelProductNo && !item.channel_product_no
+            ? [newQty, channelProductNo, item.id]
+            : [newQty, item.id];
+          await query(updateSql, updateParams);
+          await this.logSync(runId, 'inventory_update', null, null, productOrderId, channelProductNo,
             productName, optionName, qty, 'success',
-            `유사 매칭 → ${item.name} (${item.color}) ${item.qty}→${newQty}`);
+            `유사 매칭 → ${item.name} (${item.color}) ${item.qty}→${newQty}${!item.channel_product_no && channelProductNo ? ' [연결 저장]' : ''}`);
           console.log(`[Sync→Inventory] 유사 매칭: ${item.name} (${item.color}) ${item.qty}→${newQty}`);
           return { action: 'updated', matchType: 'fuzzy', inventoryId: item.id, oldQty: item.qty, newQty };
         }
       }
 
-      // 3단계: 매칭 실패 → 신규 등록
+      // 4단계: 매칭 실패 → 신규 등록 (channel_product_no 포함)
       const newName = cleanName || productName.trim();
-      // 브랜드: 추출된 코드가 기존 브랜드에 있으면 사용, 없으면 그대로 새 브랜드로 등록
-      const existingBrands = await query("SELECT DISTINCT brand FROM inventory WHERE brand != ''");
-      const brandSet = new Set(existingBrands.map(r => r.brand));
       const newBrand = brand || '';
-      // 브랜드가 있으면(기존이든 새로운이든) 그대로 사용
-      if (newBrand && !brandSet.has(newBrand)) {
-        console.log(`[Sync→Inventory] 새 브랜드 등록: ${newBrand}`);
+      if (newBrand) {
+        const existingBrands = await query("SELECT DISTINCT brand FROM inventory WHERE brand != ''");
+        const brandSet = new Set(existingBrands.map(r => r.brand));
+        if (!brandSet.has(newBrand)) {
+          console.log(`[Sync→Inventory] 새 브랜드 등록: ${newBrand}`);
+        }
       }
 
       const result = await query(
-        'INSERT INTO inventory (name, color, qty, brand) VALUES (?, ?, ?, ?)',
-        [newName, color || '기본', qty, newBrand]
+        'INSERT INTO inventory (name, color, qty, brand, channel_product_no) VALUES (?, ?, ?, ?, ?)',
+        [newName, color || '기본', qty, newBrand, channelProductNo || null]
       );
-      await this.logSync(runId, 'inventory_update', null, null, null, null,
+      await this.logSync(runId, 'inventory_update', null, null, productOrderId, channelProductNo,
         productName, optionName, qty, 'success',
         `신규 등록 → ${newName} (${color || '기본'}) ${qty}개${newBrand ? ` [${newBrand}]` : ''}`);
       console.log(`[Sync→Inventory] 신규 등록: ${newName} (${color || '기본'}) ${qty}개`);
       return { action: 'created', inventoryId: result.insertId, name: newName, color: color || '기본', qty };
 
     } catch (e) {
-      await this.logSync(runId, 'inventory_update', null, null, null, null,
+      await this.logSync(runId, 'inventory_update', null, null, productOrderId, channelProductNo,
         productName, optionName, qty, 'fail', `재고 반영 오류: ${e.message}`);
       console.error(`[Sync→Inventory] 오류: ${productName}`, e.message);
       return null;
