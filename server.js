@@ -549,10 +549,13 @@ app.get('/api/sync/returnable-items', async (req, res) => {
       // claimStatus: 상세 조회의 현재 상태 우선 (last-changed-statuses는 과거 시점 상태)
       const claimStatus = po.claimStatus || info.claimStatus || '';
 
+      // productOption: "색상: 연핑크 / 사이즈: Free" 형태
+      const productOption = po.productOption || po.optionName || null;
+
       const item = {
         productOrderId,
         productName: po.productName || '',
-        optionName: po.optionName || null,
+        optionName: productOption,
         qty: po.quantity || 1,
         channelProductNo: String(po.channelProductNo || po.productId || ''),
         claimStatus,

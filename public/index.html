@@ -2479,12 +2479,17 @@
             window._naverReturnItems = items;
 
             // 상태별 그룹 (상세 조회의 현재 claimStatus 기준)
+            const collecting = items.filter(i => i.claimStatus === 'COLLECTING');
             const collectDone = items.filter(i => i.claimStatus === 'COLLECT_DONE');
             const returnDone = items.filter(i => i.claimStatus === 'RETURN_DONE');
             const returnRequest = items.filter(i => i.claimStatus === 'RETURN_REQUEST');
-            const others = items.filter(i => !['COLLECT_DONE','RETURN_DONE','RETURN_REQUEST'].includes(i.claimStatus));
+            const others = items.filter(i => !['COLLECTING','COLLECT_DONE','RETURN_DONE','RETURN_REQUEST'].includes(i.claimStatus));
 
             let html = '';
+            if (collecting.length > 0) {
+                html += '<div class="naver-return-group">&#128666; 수거중 (' + collecting.length + ')</div>';
+                html += collecting.map(i => buildReturnItemHtml(i)).join('');
+            }
             if (collectDone.length > 0) {
                 html += '<div class="naver-return-group">&#128230; 수거완료 (' + collectDone.length + ')</div>';
                 html += collectDone.map(i => buildReturnItemHtml(i)).join('');
@@ -2549,11 +2554,15 @@
 
     function buildReturnItemHtml(item) {
         const fullName = item.productName || '';
-        const option = item.optionName || '';
         const orderId = item.productOrderId || '';
         const dateStr = formatReturnDate(item.lastChangedDate);
         const buyer = item.ordererName || '';
         const shortOrderId = orderId.length > 8 ? '...' + orderId.slice(-8) : orderId;
+
+        // 옵션 파싱: "색상: 연핑크 / 사이즈: Free" → 색상 + 사이즈
+        const { color, size } = parseProductOption(item.optionName);
+        const optionParts = [color, size].filter(Boolean);
+        const optionDisplay = optionParts.join(' / ');
 
         // 브랜드 추출
         const { brand, name } = extractBrandFromName(fullName);
@@ -2563,7 +2572,7 @@
 
         const infoLine = [dateStr, buyer, shortOrderId].filter(Boolean).join(' · ');
         const nameHtml = '<span style="font-weight:600;">' + brandBadge + name + '</span>';
-        const optionHtml = option ? '<span style="font-size:12px;color:var(--accent);font-weight:600;">&#9679; ' + option + '</span>' : '';
+        const optionHtml = optionDisplay ? '<span style="font-size:12px;color:var(--accent);font-weight:600;">&#9679; ' + optionDisplay + '</span>' : '';
         const infoHtml = '<span style="font-size:10px;color:var(--text-muted);">' + infoLine + '</span>';
 
         if (item.alreadyAdded) {
@@ -2598,6 +2607,21 @@
         return { brand: '', name: fullName };
     }
 
+    // productOption 파싱: "색상: 연핑크 / 사이즈: Free" → { color: "연핑크", size: "Free" }
+    function parseProductOption(optionStr) {
+        if (!optionStr) return { color: '', size: '', raw: '' };
+        const result = { color: '', size: '', raw: optionStr };
+        const parts = optionStr.split('/').map(s => s.trim());
+        for (const part of parts) {
+            const [key, ...vals] = part.split(':').map(s => s.trim());
+            const val = vals.join(':').trim();
+            if (/색상|컬러|color/i.test(key)) result.color = val || key;
+            else if (/사이즈|size/i.test(key)) result.size = val || key;
+            else if (!result.color) result.color = val || part; // 키 없으면 첫 번째를 색상으로
+        }
+        return result;
+    }
+
     // 원본 데이터에서 직접 추출 (문자열 파싱 대신)
     function selectNaverReturnById(productOrderId) {
         const items = window._naverReturnItems || [];
@@ -2605,7 +2629,7 @@
         if (!item) return;
 
         const fullName = item.productName || '';
-        const option = item.optionName || '';
+        const { color, size } = parseProductOption(item.optionName);
 
         const { brand, name: productName } = extractBrandFromName(fullName);
 
@@ -2627,7 +2651,7 @@
         }
 
         document.getElementById('inputName').value = productName;
-        document.getElementById('inputColor').value = option;
+        document.getElementById('inputColor').value = color;
         document.getElementById('inputQty').value = item.qty || 1;
         document.getElementById('inputProductOrderId').value = productOrderId;
         document.getElementById('inputChannelProductNo').value = item.channelProductNo || '';
