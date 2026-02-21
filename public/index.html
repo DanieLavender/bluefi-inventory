@@ -2469,6 +2469,11 @@
         const option = item.optionName || '';
         const display = option ? name + ' / ' + option : name;
         const escaped = display.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        if (item.alreadyAdded) {
+            return '<div class="naver-return-item" style="opacity:0.5;cursor:default;" title="이미 재고에 등록된 건입니다">'
+                + '<span class="item-name">' + display + '</span>'
+                + '<span class="item-qty" style="color:var(--text-muted);font-size:11px;">등록됨</span></div>';
+        }
         return '<div class="naver-return-item" onclick="selectNaverReturn(\'' + item.productOrderId + '\', \'' + escaped + '\', ' + item.qty + ', \'' + (item.channelProductNo || '') + '\')">'
             + '<span class="item-name" title="' + display.replace(/"/g, '&quot;') + '">' + display + '</span>'
             + '<span class="item-qty">' + item.qty + '개</span></div>';

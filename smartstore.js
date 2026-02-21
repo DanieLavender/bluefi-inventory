@@ -554,36 +554,49 @@ class NaverCommerceClient {
 
   /**
    * Get returnable orders (RETURN_DONE + COLLECT_DONE) in a time range
+   * Automatically chunks into 24h segments (Naver API limit)
    * @param {string} fromDate ISO datetime
    * @param {string} toDate ISO datetime
    * @returns {Array} { productOrderId, claimStatus } objects
    */
   async getReturnableOrders(fromDate, toDate) {
-    const typesToCheck = ['CLAIM_REQUESTED', 'COLLECT_DONE', 'CLAIM_COMPLETED'];
+    const typesToCheck = ['COLLECT_DONE', 'CLAIM_COMPLETED'];
     const allStatuses = [];
+    const fromMs = new Date(fromDate).getTime();
+    const toMs = new Date(toDate).getTime();
+    const DAY = 24 * 60 * 60 * 1000;
 
-    for (const changeType of typesToCheck) {
-      try {
-        const params = new URLSearchParams({
-          lastChangedFrom: fromDate,
-          lastChangedTo: toDate,
-          lastChangedType: changeType,
-        });
+    // 24시간씩 청크 분할 (네이버 API 제한)
+    let cursor = fromMs;
+    while (cursor < toMs) {
+      const chunkEnd = Math.min(cursor + DAY, toMs);
+      const chunkFrom = new Date(cursor).toISOString();
+      const chunkTo = new Date(chunkEnd).toISOString();
 
-        const data = await this.apiCall(
-          'GET',
-          `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
-        );
+      for (const changeType of typesToCheck) {
+        try {
+          const params = new URLSearchParams({
+            lastChangedFrom: chunkFrom,
+            lastChangedTo: chunkTo,
+            lastChangedType: changeType,
+          });
 
-        if (data?.data?.lastChangeStatuses) {
-          for (const s of data.data.lastChangeStatuses) {
-            allStatuses.push(s);
+          const data = await this.apiCall(
+            'GET',
+            `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
+          );
+
+          if (data?.data?.lastChangeStatuses) {
+            for (const s of data.data.lastChangeStatuses) {
+              allStatuses.push(s);
+            }
           }
+        } catch (e) {
+          console.log(`[${this.storeName}] ${changeType} ${chunkFrom.slice(0,10)} 조회 오류 (무시):`, e.message);
         }
-      } catch (e) {
-        console.log(`[${this.storeName}] ${changeType} 조회 오류 (무시):`, e.message);
+        await this.sleep(300);
       }
-      await this.sleep(300);
+      cursor = chunkEnd;
     }
 
     // 반품 관련 건 필터: claimType=RETURN & (claimStatus=RETURN_DONE or COLLECT_DONE)

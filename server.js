@@ -492,21 +492,19 @@ app.post('/api/sales/fetch', async (req, res) => {
 
 // --- Sync API Routes ---
 
-// GET /api/sync/returnable-items - 네이버 반품/수거 완료 건 중 재고 등록 가능 목록
+// GET /api/sync/returnable-items - 네이버 반품/수거 완료 건 목록 (이미 등록된 건도 표시)
 app.get('/api/sync/returnable-items', async (req, res) => {
   try {
     await initSyncClients();
     const hours = parseInt(req.query.hours) || 72;
-    const debug = req.query.debug === '1';
     const now = new Date();
     const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
 
     // 1. 반품완료 + 수거완료 건 조회
     const returnableOrders = await scheduler.storeA.getReturnableOrders(from.toISOString(), now.toISOString());
-    console.log(`[Returnable] 1단계: ${returnableOrders.length}건 감지 (${hours}시간, ${from.toISOString()} ~ ${now.toISOString()})`);
+    console.log(`[Returnable] 1단계: ${returnableOrders.length}건 감지 (${hours}시간)`);
 
     if (returnableOrders.length === 0) {
-      if (debug) return res.json({ items: [], debug: { step1_returnable: 0, hours, from: from.toISOString(), to: now.toISOString() } });
       return res.json([]);
     }
 
@@ -520,7 +518,7 @@ app.get('/api/sync/returnable-items', async (req, res) => {
     const details = await scheduler.storeA.getProductOrderDetail(orderIds);
     console.log(`[Returnable] 2단계: 상세 ${details.length}건 조회`);
 
-    // 3. sync_log에서 이미 inventory_update 처리된 productOrderId 제외
+    // 3. sync_log에서 이미 inventory_update 처리된 productOrderId 확인 (제외하지 않고 표시용)
     let processedIds = new Set();
     if (orderIds.length > 0) {
       const placeholders = orderIds.map(() => '?').join(',');
@@ -530,14 +528,13 @@ app.get('/api/sync/returnable-items', async (req, res) => {
       );
       processedIds = new Set(logRows.map(r => r.product_order_id));
     }
-    console.log(`[Returnable] 3단계: 이미 처리됨 ${processedIds.size}건 제외`);
+    console.log(`[Returnable] 3단계: 이미 등록됨 ${processedIds.size}건`);
 
-    // 4. 정리된 목록 반환
+    // 4. 전체 목록 반환 (이미 등록된 건은 alreadyAdded: true)
     const items = [];
     for (const detail of details) {
       const po = detail.productOrder || detail;
       const productOrderId = po.productOrderId || '';
-      if (processedIds.has(productOrderId)) continue;
 
       items.push({
         productOrderId,
@@ -546,26 +543,11 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         qty: po.quantity || 1,
         channelProductNo: String(po.channelProductNo || po.productId || ''),
         claimStatus: claimStatusMap[productOrderId] || '',
+        alreadyAdded: processedIds.has(productOrderId),
       });
     }
 
-    console.log(`[Returnable] 4단계: 최종 ${items.length}건 반환`);
-    if (debug) {
-      return res.json({
-        items,
-        debug: {
-          hours,
-          from: from.toISOString(),
-          to: now.toISOString(),
-          step1_returnable: returnableOrders.length,
-          step1_statuses: returnableOrders.map(o => ({ id: o.productOrderId, status: o.claimStatus })),
-          step2_details: details.length,
-          step3_alreadyProcessed: processedIds.size,
-          step3_processedIds: [...processedIds],
-          step4_final: items.length,
-        }
-      });
-    }
+    console.log(`[Returnable] 최종: 전체 ${items.length}건 (등록됨 ${processedIds.size}건)`);
     res.json(items);
   } catch (e) {
     res.status(500).json({ error: e.message });
