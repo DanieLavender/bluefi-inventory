@@ -46,10 +46,22 @@ class SyncScheduler {
       clearInterval(this.intervalHandle);
     }
     const ms = (intervalMinutes || 5) * 60 * 1000;
-    this.intervalHandle = setInterval(() => this.runSync(), ms);
+    this.intervalHandle = setInterval(() => {
+      this.runSync().catch(e => {
+        console.error('[Sync] 스케줄러 실행 오류 (다음 주기에 재시도):', e.message);
+      });
+    }, ms);
     await this.setConfig('sync_enabled', 'true');
     await this.setConfig('sync_interval_minutes', String(intervalMinutes || 5));
     console.log(`[Sync] 스케줄러 시작 (${intervalMinutes}분 간격)`);
+
+    // 서버 시작 직후 첫 동기화 즉시 실행 (30초 후)
+    setTimeout(() => {
+      console.log('[Sync] 서버 시작 후 첫 동기화 실행...');
+      this.runSync().catch(e => {
+        console.error('[Sync] 첫 동기화 실행 오류:', e.message);
+      });
+    }, 30 * 1000);
   }
 
   async stop() {

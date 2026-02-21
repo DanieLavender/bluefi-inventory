@@ -1132,12 +1132,17 @@ async function initCoupangClient() {
     const interval = await query("SELECT value FROM sync_config WHERE `key` = 'sync_interval_minutes'");
 
     if (enabled[0] && enabled[0].value === 'true') {
+      const intervalMin = parseInt(interval[0]?.value) || 5;
+      console.log(`[Sync] 자동 시작 설정 감지: enabled=true, interval=${intervalMin}분`);
       try {
         await initSyncClients();
-        await scheduler.start(parseInt(interval[0]?.value) || 5);
+        await scheduler.start(intervalMin);
+        console.log(`[Sync] 자동 시작 성공 — ${intervalMin}분 간격, 30초 후 첫 실행`);
       } catch (e) {
         console.log('[Sync] 자동 시작 실패 (API 키 미설정):', e.message);
       }
+    } else {
+      console.log('[Sync] 자동 시작 비활성화 (sync_enabled != true)');
     }
   } catch (e) {
     console.log('[Sync] 설정 확인 오류:', e.message);
