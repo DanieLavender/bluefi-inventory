@@ -1440,8 +1440,6 @@
             .topbar-right { gap: 6px; }
             /* 모바일 상단바 버튼 최적화 */
             .hide-mobile { display: none; }
-            .topbar-right #exportBtn { padding: 7px; }
-            .topbar-right #exportBtn svg { width: 18px; height: 18px; }
             .topbar-right #addItemBtn { padding: 7px 10px; font-size: 12px; }
             .topbar-right #refreshBtn { padding: 7px; }
             .topbar-right #refreshBtn svg { width: 18px; height: 18px; }
@@ -1644,10 +1642,6 @@
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         <span class="hide-mobile">설치</span>
                     </button>
-                    <button class="btn btn-outline" id="exportBtn" onclick="showToast('내보내기 기능 준비 중입니다.', 'info')">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        <span class="hide-mobile">내보내기</span>
-                    </button>
                     <button class="btn btn-accent" id="addItemBtn" onclick="openAddModal()">+ 재고 추가</button>
                     <button class="btn btn-outline" id="refreshBtn" onclick="refreshAll()" title="새로고침">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
@@ -1706,7 +1700,6 @@
                             <span class="confirmed-returns-count" id="confirmedReturnsCount" style="display:none">0</span>
                         </div>
                         <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
-                            <button class="btn btn-accent btn-sm" onclick="fetchConfirmedReturns()">새로고침</button>
                             <button class="recent-returns-toggle open" id="confirmedToggleBtn" onclick="event.stopPropagation();toggleConfirmedReturns()">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                             </button>
@@ -2287,7 +2280,8 @@
         // Topbar buttons: show only on inventory
         const showOnInventory = page === 'inventory';
         document.getElementById('addItemBtn').style.display = showOnInventory ? '' : 'none';
-        document.getElementById('exportBtn').style.display = showOnInventory ? '' : 'none';
+        const exportBtn = document.getElementById('exportBtn');
+        if (exportBtn) exportBtn.style.display = showOnInventory ? '' : 'none';
 
         // Close sidebar on mobile after navigation
         if (window.innerWidth <= 768) {
