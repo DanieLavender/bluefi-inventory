@@ -605,8 +605,8 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         console.log(`[Returnable] 쿠팡: ${coupangReturns.length}건 감지`);
 
         for (const ret of coupangReturns) {
-          // 상태 매핑: RF(반품완료) → RETURN_DONE, CC(수거완료) → COLLECT_DONE, 그 외 → COLLECTING
-          const statusMap = { 'RF': 'RETURN_DONE', 'CC': 'COLLECT_DONE', 'UC': 'COLLECTING' };
+          // 상태 매핑: 쿠팡 RF(반품완료)는 실제로는 수거완료 단계 → COLLECT_DONE으로 매핑
+          const statusMap = { 'RF': 'COLLECT_DONE', 'CC': 'COLLECT_DONE', 'UC': 'COLLECTING' };
           const claimStatus = statusMap[ret.receiptStatus] || 'COLLECTING';
 
           for (const ri of ret.returnItems) {

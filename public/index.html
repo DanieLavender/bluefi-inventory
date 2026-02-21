@@ -447,6 +447,7 @@
         }
         .return-added-label {
             flex-shrink: 0;
+            margin-left: auto;
             padding: 4px 10px;
             font-size: 11px;
             font-weight: 600;
@@ -462,13 +463,13 @@
 
         /* ===== 실수거완료 버튼/라벨 ===== */
         .return-confirm-btn {
-            flex-shrink:0; padding:4px 10px; font-size:12px; font-weight:600;
+            flex-shrink:0; margin-left:auto; padding:4px 10px; font-size:12px; font-weight:600;
             color:white; background:var(--accent); border:1px solid var(--accent);
             border-radius:var(--radius-sm); cursor:pointer; transition:all 0.15s; white-space:nowrap;
         }
         .return-confirm-btn:hover { background:#1D4ED8; border-color:#1D4ED8; }
         .return-confirmed-label {
-            flex-shrink:0; padding:4px 10px; font-size:11px; font-weight:600;
+            flex-shrink:0; margin-left:auto; padding:4px 10px; font-size:11px; font-weight:600;
             color:#D97706; background:#FFFBEB; border:1px solid #FDE68A;
             border-radius:var(--radius-sm); white-space:nowrap; cursor:pointer;
         }
@@ -3274,9 +3275,10 @@
 
                     const buyerName = item.ordererName ? `<span class="return-item-buyer">${escapeHtml(item.ordererName)}</span>` : '';
 
-                    // 버튼 분기: 추가완료 > 실수거완료됨 > 실수거완료 버튼
+                    // 버튼 분기: 추가완료 > 실수거완료됨 > 실수거완료 버튼 (수거완료만)
                     const added = item.alreadyAdded;
                     const confirmed = item.confirmedPickup;
+                    const canConfirm = (st === 'COLLECT_DONE'); // 수거완료만 실수거완료 가능
                     let rowClass = 'return-item-row';
                     let btnHtml = '';
 
@@ -3285,7 +3287,7 @@
                         btnHtml = '<span class="return-added-label">추가완료</span>';
                     } else if (confirmed) {
                         btnHtml = `<span class="return-confirmed-label" onclick="cancelConfirmPickup('${item.productOrderId}', this)" title="클릭하여 취소">실수거완료됨</span>`;
-                    } else {
+                    } else if (canConfirm) {
                         btnHtml = `<button class="return-confirm-btn" onclick="confirmPickup('${item.productOrderId}', this)">실수거완료</button>`;
                     }
 
