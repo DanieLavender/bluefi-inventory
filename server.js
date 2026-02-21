@@ -539,23 +539,46 @@ app.get('/api/sync/returnable-items', async (req, res) => {
 
     // 4. 전체 목록 반환 (이미 등록된 건은 alreadyAdded: true)
     const items = [];
+    const debug = req.query.debug === '1';
     for (const detail of details) {
       const po = detail.productOrder || detail;
       const order = detail.order || {};
       const productOrderId = po.productOrderId || '';
       const info = statusInfoMap[productOrderId] || {};
 
-      items.push({
+      // claimStatus: statusInfoMap에서 먼저, 없으면 상세 조회 결과에서 가져오기
+      const claimStatus = info.claimStatus || po.claimStatus || '';
+
+      const item = {
         productOrderId,
         productName: po.productName || '',
         optionName: po.optionName || null,
         qty: po.quantity || 1,
         channelProductNo: String(po.channelProductNo || po.productId || ''),
-        claimStatus: info.claimStatus || '',
+        claimStatus,
+        claimType: po.claimType || '',
         lastChangedDate: info.lastChangedDate || null,
         ordererName: order.ordererName || po.ordererName || '',
         alreadyAdded: processedIds.has(productOrderId),
-      });
+      };
+
+      // 디버그: 상세 응답의 주요 필드 로깅
+      console.log(`[Returnable] 항목: ${po.productName} / ${po.optionName || '(옵션없음)'} claimStatus=${claimStatus} orderer=${item.ordererName}`);
+
+      if (debug) {
+        item._debug = {
+          productOrderStatus: po.productOrderStatus,
+          claimType: po.claimType,
+          claimStatus: po.claimStatus,
+          optionName: po.optionName,
+          productId: po.productId,
+          channelProductNo: po.channelProductNo,
+          originalProductId: po.originalProductId,
+          ordererName: order.ordererName,
+        };
+      }
+
+      items.push(item);
     }
 
     console.log(`[Returnable] 최종: 전체 ${items.length}건 (등록됨 ${processedIds.size}건)`);

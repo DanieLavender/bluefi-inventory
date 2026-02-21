@@ -560,10 +560,10 @@ class NaverCommerceClient {
    * @returns {Array} { productOrderId, claimStatus } objects
    */
   async getReturnableOrders(fromDate, toDate) {
-    // COLLECT_DONE: 수거완료 건 (클레임 전용 타입으로만 조회 가능)
+    // CLAIM_REQUESTED: 클레임 접수 건 (반품/교환 요청 → COLLECT_DONE 이전 단계도 포함)
+    // COLLECT_DONE: 수거완료 건
     // CLAIM_COMPLETED: 반품완료 건
-    // 일반 조회(타입 생략)로는 수거완료가 반환되지 않음 — 반드시 타입 지정 필요
-    const typesToCheck = ['COLLECT_DONE', 'CLAIM_COMPLETED'];
+    const typesToCheck = ['CLAIM_REQUESTED', 'COLLECT_DONE', 'CLAIM_COMPLETED'];
     const allStatuses = [];
     const fromMs = new Date(fromDate).getTime();
     const toMs = new Date(toDate).getTime();
@@ -590,9 +590,13 @@ class NaverCommerceClient {
           );
 
           const found = data?.data?.lastChangeStatuses || [];
+          if (found.length > 0) {
+            console.log(`[${this.storeName}] ${changeType} ${chunkFrom.slice(0,10)}: ${found.length}건 발견`);
+            found.forEach(s => console.log(`  → claimType=${s.claimType} claimStatus=${s.claimStatus} orderStatus=${s.productOrderStatus} id=${s.productOrderId}`));
+          }
           for (const s of found) allStatuses.push(s);
         } catch (e) {
-          console.log(`[${this.storeName}] ${changeType} ${chunkFrom.slice(0,10)} 오류 (무시):`, e.message);
+          console.log(`[${this.storeName}] ${changeType} ${chunkFrom.slice(0,10)} 오류:`, e.message);
         }
         await this.sleep(200);
       }

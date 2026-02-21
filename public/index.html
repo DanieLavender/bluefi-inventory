@@ -2540,70 +2540,72 @@
     function buildReturnItemHtml(item) {
         const name = item.productName || '';
         const option = item.optionName || '';
-        const cpNo = item.channelProductNo || '';
         const orderId = item.productOrderId || '';
         const dateStr = formatReturnDate(item.lastChangedDate);
         const buyer = item.ordererName || '';
         const shortOrderId = orderId.length > 8 ? '...' + orderId.slice(-8) : orderId;
-        // 하단 정보줄: 날짜 · 주문자 · 주문번호
-        const infoLine = [dateStr, buyer, '주문 ' + shortOrderId].filter(Boolean).join(' · ');
+        const infoLine = [dateStr, buyer, shortOrderId].filter(Boolean).join(' · ');
+
+        const nameHtml = '<span style="font-weight:600;">' + name + '</span>';
+        const optionHtml = option ? '<span style="font-size:12px;color:var(--accent);font-weight:600;">&#9679; ' + option + '</span>' : '';
+        const infoHtml = '<span style="font-size:10px;color:var(--text-muted);">' + infoLine + '</span>';
 
         if (item.alreadyAdded) {
-            return '<div class="naver-return-item" style="opacity:0.45;cursor:default;" title="주문번호: ' + orderId + '">'
+            return '<div class="naver-return-item" style="opacity:0.45;cursor:default;" title="' + orderId + '">'
                 + '<span class="item-name" style="display:flex;flex-direction:column;gap:2px;">'
-                + '<span>' + name + '</span>'
-                + (option ? '<span style="font-size:12px;color:var(--accent);font-weight:600;">' + option + '</span>' : '')
+                + nameHtml + optionHtml
                 + '<span style="font-size:10px;color:var(--text-muted);">' + infoLine + ' · 등록 완료</span>'
                 + '</span>'
                 + '<span class="item-qty" style="color:#22c55e;font-size:11px;font-weight:600;">&#10003; 등록됨</span></div>';
         }
-        const escaped = (name + (option ? ' / ' + option : '')).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        return '<div class="naver-return-item" onclick="selectNaverReturn(\'' + orderId + '\', \'' + escaped + '\', ' + item.qty + ', \'' + cpNo + '\')" title="주문번호: ' + orderId + '">'
+        return '<div class="naver-return-item" onclick="selectNaverReturnById(\'' + orderId + '\')" title="' + orderId + '">'
             + '<span class="item-name" style="display:flex;flex-direction:column;gap:2px;">'
-            + '<span>' + name + '</span>'
-            + (option ? '<span style="font-size:12px;color:var(--accent);font-weight:600;">' + option + '</span>' : '')
-            + '<span style="font-size:10px;color:var(--text-muted);">' + infoLine + '</span>'
+            + nameHtml + optionHtml + infoHtml
             + '</span>'
             + '<span class="item-qty">' + item.qty + '개</span></div>';
     }
 
-    function selectNaverReturn(productOrderId, displayText, qty, channelProductNo) {
-        // displayText: "브랜드 상품명 / 옵션(컬러)"
-        // 브랜드 추출: 앞 2글자 영문
-        const brandMatch = displayText.match(/^([a-zA-Z]{2})\s/);
-        const brand = brandMatch ? brandMatch[1].toLowerCase() : '';
-        // 상품명: 브랜드 제거 후, 옵션 앞까지
-        let productName = displayText;
-        if (brandMatch) productName = productName.slice(brandMatch[0].length);
-        let color = '';
-        const slashIdx = productName.indexOf(' / ');
-        if (slashIdx >= 0) {
-            color = productName.slice(slashIdx + 3).trim();
-            productName = productName.slice(0, slashIdx).trim();
-        }
+    // 원본 데이터에서 직접 추출 (문자열 파싱 대신)
+    function selectNaverReturnById(productOrderId) {
+        const items = window._naverReturnItems || [];
+        const item = items.find(i => i.productOrderId === productOrderId);
+        if (!item) return;
 
-        // 브랜드 선택
+        const fullName = item.productName || '';
+        const option = item.optionName || '';
+
+        // 브랜드: 상품명 앞 2글자 영문
+        const brandMatch = fullName.match(/^([a-zA-Z]{2})\s/);
+        const brand = brandMatch ? brandMatch[1].toLowerCase() : '';
+        // 상품명: 브랜드 접두사 제거
+        const productName = brandMatch ? fullName.slice(brandMatch[0].length) : fullName;
+
+        // 브랜드 자동 선택
         const brandSelect = document.getElementById('inputBrand');
         if (brand) {
             const exists = [...brandSelect.options].some(o => o.value === brand);
             if (exists) {
                 brandSelect.value = brand;
+                document.getElementById('customBrandGroup').style.display = 'none';
             } else {
                 brandSelect.value = '__custom__';
                 toggleCustomBrand();
                 document.getElementById('inputCustomBrand').value = brand;
             }
+        } else {
+            brandSelect.value = '';
+            document.getElementById('customBrandGroup').style.display = 'none';
         }
 
         document.getElementById('inputName').value = productName;
-        document.getElementById('inputColor').value = color;
-        document.getElementById('inputQty').value = qty;
+        document.getElementById('inputColor').value = option;
+        document.getElementById('inputQty').value = item.qty || 1;
         document.getElementById('inputProductOrderId').value = productOrderId;
-        document.getElementById('inputChannelProductNo').value = channelProductNo;
+        document.getElementById('inputChannelProductNo').value = item.channelProductNo || '';
 
         // 선택 하이라이트
         document.querySelectorAll('.naver-return-item').forEach(el => el.classList.remove('selected'));
-        event.currentTarget.classList.add('selected');
+        if (event && event.currentTarget) event.currentTarget.classList.add('selected');
     }
 
     function selectNaverReturnGroup(orderIdsStr) {
@@ -2626,11 +2628,15 @@
             const exists = [...brandSelect.options].some(o => o.value === brand);
             if (exists) {
                 brandSelect.value = brand;
+                document.getElementById('customBrandGroup').style.display = 'none';
             } else {
                 brandSelect.value = '__custom__';
                 toggleCustomBrand();
                 document.getElementById('inputCustomBrand').value = brand;
             }
+        } else {
+            brandSelect.value = '';
+            document.getElementById('customBrandGroup').style.display = 'none';
         }
 
         document.getElementById('inputName').value = productName;
@@ -2640,7 +2646,7 @@
         document.getElementById('inputChannelProductNo').value = first.channelProductNo || '';
 
         document.querySelectorAll('.naver-return-item').forEach(el => el.classList.remove('selected'));
-        event.currentTarget.classList.add('selected');
+        if (event && event.currentTarget) event.currentTarget.classList.add('selected');
     }
 
     async function submitItem() {
