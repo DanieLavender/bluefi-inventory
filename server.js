@@ -650,42 +650,36 @@ app.get('/api/sync/returnable-items', async (req, res) => {
       console.error(`[Returnable] 쿠팡 조회 실패:`, coupangErr.message);
     }
 
-    // === 상태 필터링: 수거완료/반품완료만 (반품요청/수거중/반품거절 제외) ===
-    const allowedStatuses = ['COLLECT_DONE', 'RETURN_DONE'];
-    const filteredItems = items.filter(item => allowedStatuses.includes(item.claimStatus));
-    console.log(`[Returnable] 상태 필터링: ${items.length}건 → ${filteredItems.length}건 (수거완료/반품완료만)`);
-
     // === processedIds 조회 (네이버 + 쿠팡 통합) ===
-    const filteredOrderIds = filteredItems.map(i => i.productOrderId);
     let processedIds = new Set();
-    if (filteredOrderIds.length > 0) {
-      const placeholders = filteredOrderIds.map(() => '?').join(',');
+    if (allProductOrderIds.length > 0) {
+      const placeholders = allProductOrderIds.map(() => '?').join(',');
       const logRows = await query(
         `SELECT product_order_id FROM sync_log WHERE type = 'inventory_update' AND product_order_id IN (${placeholders})`,
-        filteredOrderIds
+        allProductOrderIds
       );
       processedIds = new Set(logRows.map(r => r.product_order_id));
     }
 
     // === confirmedPickup 조회 (return_confirmations) ===
     let confirmedIds = new Set();
-    if (filteredOrderIds.length > 0) {
-      const placeholders2 = filteredOrderIds.map(() => '?').join(',');
+    if (allProductOrderIds.length > 0) {
+      const placeholders2 = allProductOrderIds.map(() => '?').join(',');
       const confirmRows = await query(
         `SELECT product_order_id FROM return_confirmations WHERE product_order_id IN (${placeholders2})`,
-        filteredOrderIds
+        allProductOrderIds
       );
       confirmedIds = new Set(confirmRows.map(r => r.product_order_id));
     }
 
     // alreadyAdded + confirmedPickup 플래그 설정
-    for (const item of filteredItems) {
+    for (const item of items) {
       item.alreadyAdded = processedIds.has(item.productOrderId);
       item.confirmedPickup = confirmedIds.has(item.productOrderId);
     }
 
-    console.log(`[Returnable] 최종: ${filteredItems.length}건 (등록됨 ${processedIds.size}, 실수거완료 ${confirmedIds.size})`);
-    res.json(filteredItems);
+    console.log(`[Returnable] 최종: ${items.length}건 (등록됨 ${processedIds.size}, 실수거완료 ${confirmedIds.size})`);
+    res.json(items);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
