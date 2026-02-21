@@ -1392,10 +1392,10 @@
                     <div style="overflow-x:auto">
                         <table class="shell-table" id="salesRecentTable">
                             <thead>
-                                <tr><th>시간</th><th>상품명</th><th style="text-align:right">수량</th><th style="text-align:right">금액</th></tr>
+                                <tr><th>채널</th><th>시간</th><th>상품명</th><th style="text-align:right">수량</th><th style="text-align:right">금액</th></tr>
                             </thead>
                             <tbody id="salesRecentBody">
-                                <tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">데이터를 불러오는 중...</td></tr>
+                                <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted);">데이터를 불러오는 중...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -1504,6 +1504,26 @@
                             </div>
                             <div style="text-align:right;margin-top:8px;">
                                 <button class="btn btn-outline btn-sm" onclick="testStoreConnection('B')">연결 테스트</button>
+                            </div>
+                        </div>
+
+                        <!-- Coupang -->
+                        <div style="margin-bottom:16px;padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);">
+                            <div style="font-size:13px;font-weight:600;margin-bottom:10px;">쿠팡 Wing (매출 수집)</div>
+                            <div class="setting-row">
+                                <label>Access Key</label>
+                                <input type="text" id="coupangAccessKey" placeholder="Access Key 입력">
+                            </div>
+                            <div class="setting-row">
+                                <label>Secret Key</label>
+                                <input type="password" id="coupangSecretKey" placeholder="Secret Key 입력">
+                            </div>
+                            <div class="setting-row">
+                                <label>Vendor ID</label>
+                                <input type="text" id="coupangVendorId" placeholder="예: A00121326">
+                            </div>
+                            <div style="text-align:right;margin-top:8px;">
+                                <button class="btn btn-outline btn-sm" onclick="testCoupangConnection()">연결 테스트</button>
                             </div>
                         </div>
 
@@ -2440,6 +2460,10 @@
             document.getElementById('storeBDisplayStatus').value = config.store_b_display_status || 'SUSPENSION';
             document.getElementById('storeBSaleStatus').value = config.store_b_sale_status || 'SALE';
             document.getElementById('storeBNamePrefix').value = config.store_b_name_prefix ?? '(오늘출발)';
+            // 쿠팡
+            document.getElementById('coupangAccessKey').placeholder = config.coupang_access_key || 'Access Key 입력';
+            document.getElementById('coupangVendorId').value = config.coupang_vendor_id || '';
+            if (config.coupang_access_key) document.getElementById('coupangAccessKey').value = '';
 
             // Interval
             const interval = config.sync_interval_minutes || '5';
@@ -2488,6 +2512,13 @@
         body.store_b_display_status = document.getElementById('storeBDisplayStatus').value;
         body.store_b_sale_status = document.getElementById('storeBSaleStatus').value;
         body.store_b_name_prefix = document.getElementById('storeBNamePrefix').value;
+        // 쿠팡
+        const cAccessKey = document.getElementById('coupangAccessKey').value.trim();
+        const cSecretKey = document.getElementById('coupangSecretKey').value.trim();
+        const cVendorId = document.getElementById('coupangVendorId').value.trim();
+        if (cAccessKey) body.coupang_access_key = cAccessKey;
+        if (cSecretKey) body.coupang_secret_key = cSecretKey;
+        if (cVendorId) body.coupang_vendor_id = cVendorId;
 
         try {
             await api('/api/sync/save-keys', {
@@ -2525,6 +2556,30 @@
             }
         } catch (e) {
             showToast(`연결 테스트 실패: ${e.message}`, 'error');
+        }
+    }
+
+    async function testCoupangConnection() {
+        const accessKey = document.getElementById('coupangAccessKey').value.trim();
+        const secretKey = document.getElementById('coupangSecretKey').value.trim();
+        const vendorId = document.getElementById('coupangVendorId').value.trim();
+        if (!accessKey || !secretKey || !vendorId) {
+            showToast('Access Key, Secret Key, Vendor ID를 모두 입력해주세요.', 'error');
+            return;
+        }
+        try {
+            showToast('쿠팡 연결 테스트 중...', 'info');
+            const result = await api('/api/coupang/test-connection', {
+                method: 'POST',
+                body: JSON.stringify({ accessKey, secretKey, vendorId })
+            });
+            if (result.success) {
+                showToast('쿠팡 연결 성공!', 'success');
+            } else {
+                showToast('쿠팡 연결 실패: ' + result.message, 'error');
+            }
+        } catch (e) {
+            showToast('연결 테스트 실패: ' + e.message, 'error');
         }
     }
 
@@ -2728,11 +2783,11 @@
             const tbody = document.getElementById('salesRecentBody');
 
             if (!data || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">오늘 주문이 아직 없습니다.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted);">오늘 주문이 아직 없습니다.</td></tr>';
                 return;
             }
 
-            const cancelStatuses = ['CANCELED', 'CANCELED_BY_NOPAYMENT', 'RETURNED', 'EXCHANGED'];
+            const cancelStatuses = ['CANCELED', 'CANCELED_BY_NOPAYMENT', 'RETURNED', 'EXCHANGED', 'CANCELLED'];
             tbody.innerHTML = data.map(row => {
                 const date = new Date(row.order_date);
                 const timeStr = `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
@@ -2742,8 +2797,12 @@
                 const isCanceled = cancelStatuses.includes(row.product_order_status);
                 const rowStyle = isCanceled ? 'text-decoration:line-through;color:var(--text-muted)' : '';
                 const statusBadge = isCanceled ? ' <span style="font-size:11px;color:#ef4444">취소</span>' : '';
+                const channelBadge = row.store === 'C'
+                    ? '<span style="font-size:11px;background:#f43f5e;color:white;padding:1px 6px;border-radius:3px">쿠팡</span>'
+                    : '<span style="font-size:11px;background:#16a34a;color:white;padding:1px 6px;border-radius:3px">네이버</span>';
                 return `
                     <tr style="${rowStyle}">
+                        <td>${channelBadge}</td>
                         <td>${timeStr}</td>
                         <td title="${row.product_name || ''}">${name}${statusBadge}</td>
                         <td style="text-align:right">${row.qty}</td>

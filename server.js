@@ -4,6 +4,7 @@ const path = require('path');
 const { getPool, initDb, query } = require('./database');
 const { scheduler } = require('./sync-scheduler');
 const { NaverCommerceClient } = require('./smartstore');
+const { CoupangClient } = require('./coupang');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -202,7 +203,7 @@ app.get('/api/server-ip', async (req, res) => {
 app.get('/api/sales/stats', async (req, res) => {
   try {
     // mysql2 timezone: +09:00 → CURDATE()가 KST 기준, order_date도 KST 저장
-    const excludeStatuses = "('CANCELED', 'CANCELED_BY_NOPAYMENT', 'RETURNED', 'EXCHANGED')";
+    const excludeStatuses = "('CANCELED', 'CANCELED_BY_NOPAYMENT', 'RETURNED', 'EXCHANGED', 'CANCELLED')";
     const today = await query(
       `SELECT COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue FROM sales_orders WHERE DATE(order_date) = CURDATE() AND product_order_status NOT IN ${excludeStatuses}`
     );
@@ -305,17 +306,22 @@ app.post('/api/sales/fetch', async (req, res) => {
 
     const { resetDays } = req.body || {};
     // Store B는 주문 조회 API 권한이 없으므로 A만 수집
-    const stores = [
+    // 네이버 스토어
+    const naverStores = [
       { key: 'A', client: scheduler.storeA, configKey: 'sales_last_fetch_a' },
     ];
+
+    // 쿠팡 클라이언트 초기화
+    const coupangClient = await initCoupangClient();
 
     // 리셋 요청 시 기존 데이터 삭제 + last_fetch 초기화
     if (resetDays) {
       await query('DELETE FROM sales_orders');
       const resetTime = new Date(Date.now() - resetDays * 24 * 60 * 60 * 1000).toISOString();
-      for (const s of stores) {
+      for (const s of naverStores) {
         await scheduler.setConfig(s.configKey, resetTime);
       }
+      if (coupangClient) await scheduler.setConfig('sales_last_fetch_c', resetTime);
       console.log(`[Sales] 전체 리셋: 기존 데이터 삭제 + ${resetDays}일 전부터 재수집`);
     }
 
@@ -323,7 +329,8 @@ app.post('/api/sales/fetch', async (req, res) => {
     let totalFound = 0;
     const errors = [];
 
-    for (const { key, client, configKey } of stores) {
+    // === 네이버 수집 ===
+    for (const { key, client, configKey } of naverStores) {
       try {
         const lastFetch = await scheduler.getConfig(configKey);
         const now = new Date();
@@ -338,7 +345,6 @@ app.post('/api/sales/fetch', async (req, res) => {
           const chunkEnd = new Date(Math.min(cursor.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
 
           try {
-            // lastChangedType 생략 → 모든 상태 변경 포함 (배송중/구매확정 등)
             const orderIds = await client.getOrders(cursor.toISOString(), chunkEnd.toISOString());
             storeFound += orderIds.length;
 
@@ -369,9 +375,7 @@ app.post('/api/sales/fetch', async (req, res) => {
                       [key, productOrderId, orderDate, productName, optionName, qty, unitPrice, totalAmount, status, channelProductNo]
                     );
                     storeInserted++;
-                  } catch (dbErr) {
-                    // INSERT IGNORE handles duplicates silently
-                  }
+                  } catch (dbErr) { }
                 }
 
                 if (i + batchSize < orderIds.length) {
@@ -388,7 +392,6 @@ app.post('/api/sales/fetch', async (req, res) => {
           await new Promise(r => setTimeout(r, 300));
         }
 
-        // 에러 없이 완료된 경우에만 last_fetch 갱신
         if (!errors.some(e => e.startsWith(`Store ${key}`))) {
           await scheduler.setConfig(configKey, now.toISOString());
         }
@@ -398,6 +401,55 @@ app.post('/api/sales/fetch', async (req, res) => {
       } catch (storeErr) {
         errors.push(`Store ${key}: ${storeErr.message}`);
         console.error(`[Sales] Store ${key} 오류:`, storeErr.message);
+      }
+    }
+
+    // === 쿠팡 수집 ===
+    if (coupangClient) {
+      try {
+        const configKey = 'sales_last_fetch_c';
+        const lastFetch = await scheduler.getConfig(configKey);
+        const now = new Date();
+        const from = (lastFetch && lastFetch.length > 0) ? new Date(lastFetch) : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        console.log(`[Sales] Coupang 수집 시작: ${from.toISOString()} ~ ${now.toISOString()}`);
+        let cursor = new Date(from);
+        let storeInserted = 0;
+        let storeFound = 0;
+
+        while (cursor < now) {
+          const chunkEnd = new Date(Math.min(cursor.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
+          try {
+            const items = await coupangClient.getOrderItems(cursor.toISOString(), chunkEnd.toISOString());
+            storeFound += items.length;
+            for (const item of items) {
+              try {
+                await query(
+                  `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  ['C', item.productOrderId, item.orderDate, item.productName, item.optionName,
+                   item.qty, item.unitPrice, item.totalAmount, item.status, item.channelProductNo]
+                );
+                storeInserted++;
+              } catch (dbErr) { }
+            }
+          } catch (chunkErr) {
+            errors.push(`Coupang: ${chunkErr.message}`);
+            console.log(`[Sales] Coupang 청크 오류 (${cursor.toISOString()}):`, chunkErr.message);
+          }
+          cursor = chunkEnd;
+          await new Promise(r => setTimeout(r, 300));
+        }
+
+        if (!errors.some(e => e.startsWith('Coupang'))) {
+          await scheduler.setConfig(configKey, now.toISOString());
+        }
+        totalInserted += storeInserted;
+        totalFound += storeFound;
+        console.log(`[Sales] Coupang 수집 완료: 발견 ${storeFound}건, 신규 ${storeInserted}건`);
+      } catch (e) {
+        errors.push(`Coupang: ${e.message}`);
+        console.error('[Sales] Coupang 오류:', e.message);
       }
     }
 
@@ -671,6 +723,13 @@ app.get('/api/sync/config', async (req, res) => {
     config.store_a_client_secret = aSecret ? '****' : '';
     config.store_b_client_id = bId ? maskSecret(bId) : '';
     config.store_b_client_secret = bSecret ? '****' : '';
+    // 쿠팡
+    const cAccessKey = process.env.COUPANG_ACCESS_KEY || config.coupang_access_key || '';
+    const cSecretKey = process.env.COUPANG_SECRET_KEY || config.coupang_secret_key || '';
+    const cVendorId = process.env.COUPANG_VENDOR_ID || config.coupang_vendor_id || '';
+    config.coupang_access_key = cAccessKey ? maskSecret(cAccessKey) : '';
+    config.coupang_secret_key = cSecretKey ? '****' : '';
+    config.coupang_vendor_id = cVendorId || '';
     res.json(config);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -775,7 +834,8 @@ app.post('/api/sync/test-connection', async (req, res) => {
 app.post('/api/sync/save-keys', async (req, res) => {
   try {
     const { store_a_client_id, store_a_client_secret, store_b_client_id, store_b_client_secret,
-            store_b_display_status, store_b_sale_status } = req.body;
+            store_b_display_status, store_b_sale_status, store_b_name_prefix,
+            coupang_access_key, coupang_secret_key, coupang_vendor_id } = req.body;
     const upsertSql = 'INSERT INTO sync_config (`key`, value, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()';
     if (store_a_client_id) await query(upsertSql, ['store_a_client_id', store_a_client_id]);
     if (store_a_client_secret) await query(upsertSql, ['store_a_client_secret', store_a_client_secret]);
@@ -783,9 +843,29 @@ app.post('/api/sync/save-keys', async (req, res) => {
     if (store_b_client_secret) await query(upsertSql, ['store_b_client_secret', store_b_client_secret]);
     if (store_b_display_status) await query(upsertSql, ['store_b_display_status', store_b_display_status]);
     if (store_b_sale_status) await query(upsertSql, ['store_b_sale_status', store_b_sale_status]);
+    if (store_b_name_prefix !== undefined) await query(upsertSql, ['store_b_name_prefix', store_b_name_prefix]);
+    // 쿠팡
+    if (coupang_access_key) await query(upsertSql, ['coupang_access_key', coupang_access_key]);
+    if (coupang_secret_key) await query(upsertSql, ['coupang_secret_key', coupang_secret_key]);
+    if (coupang_vendor_id) await query(upsertSql, ['coupang_vendor_id', coupang_vendor_id]);
     scheduler.storeA = null;
     scheduler.storeB = null;
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/coupang/test-connection - 쿠팡 연결 테스트
+app.post('/api/coupang/test-connection', async (req, res) => {
+  try {
+    const { accessKey, secretKey, vendorId } = req.body;
+    if (!accessKey || !secretKey || !vendorId) {
+      return res.status(400).json({ error: 'Access Key, Secret Key, Vendor ID를 모두 입력해주세요.' });
+    }
+    const client = new CoupangClient(accessKey, secretKey, vendorId, 'Coupang-Test');
+    const result = await client.testConnection();
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -820,6 +900,18 @@ async function initSyncClients() {
     throw new Error('스토어 A/B API 키가 설정되지 않았습니다. Settings에서 입력해주세요.');
   }
   scheduler.initClients(aId, aSecret, bId, bSecret);
+}
+
+async function initCoupangClient() {
+  const getVal = async (key) => {
+    const rows = await query('SELECT value FROM sync_config WHERE `key` = ?', [key]);
+    return rows[0] ? rows[0].value : '';
+  };
+  const accessKey = process.env.COUPANG_ACCESS_KEY || await getVal('coupang_access_key');
+  const secretKey = process.env.COUPANG_SECRET_KEY || await getVal('coupang_secret_key');
+  const vendorId = process.env.COUPANG_VENDOR_ID || await getVal('coupang_vendor_id');
+  if (!accessKey || !secretKey || !vendorId) return null;
+  return new CoupangClient(accessKey, secretKey, vendorId);
 }
 
 // Initialize DB and start server

@@ -122,6 +122,10 @@ async function initDb() {
     ['sales_last_fetch_a', ''],
     ['sales_last_fetch_b', ''],
     ['store_b_name_prefix', '(오늘출발)'],
+    ['sales_last_fetch_c', ''],
+    ['coupang_access_key', ''],
+    ['coupang_secret_key', ''],
+    ['coupang_vendor_id', ''],
   ];
   for (const [k, v] of configDefaults) {
     await query(

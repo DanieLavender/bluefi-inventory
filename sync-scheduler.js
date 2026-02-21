@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { NaverCommerceClient } = require('./smartstore');
+const { CoupangClient } = require('./coupang');
 const { query } = require('./database');
 
 class SyncScheduler {
@@ -487,6 +488,57 @@ class SyncScheduler {
       } catch (e) {
         console.error(`[Sales] Store ${key} 수집 오류:`, e.message);
       }
+    }
+
+    // 쿠팡 자동 수집
+    try {
+      const getVal = async (key) => {
+        const rows = await query('SELECT value FROM sync_config WHERE `key` = ?', [key]);
+        return rows[0] ? rows[0].value : '';
+      };
+      const cAccessKey = process.env.COUPANG_ACCESS_KEY || await getVal('coupang_access_key');
+      const cSecretKey = process.env.COUPANG_SECRET_KEY || await getVal('coupang_secret_key');
+      const cVendorId = process.env.COUPANG_VENDOR_ID || await getVal('coupang_vendor_id');
+
+      if (cAccessKey && cSecretKey && cVendorId) {
+        const coupang = new CoupangClient(cAccessKey, cSecretKey, cVendorId);
+        const configKey = 'sales_last_fetch_c';
+        const lastFetch = await this.getConfig(configKey);
+        const now = new Date();
+        const from = lastFetch ? new Date(lastFetch) : new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+        let cursor = new Date(from);
+        let inserted = 0;
+
+        while (cursor < now) {
+          const chunkEnd = new Date(Math.min(cursor.getTime() + 24 * 60 * 60 * 1000, now.getTime()));
+          try {
+            const items = await coupang.getOrderItems(cursor.toISOString(), chunkEnd.toISOString());
+            for (const item of items) {
+              try {
+                await query(
+                  `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  ['C', item.productOrderId, item.orderDate, item.productName, item.optionName,
+                   item.qty, item.unitPrice, item.totalAmount, item.status, item.channelProductNo]
+                );
+                inserted++;
+              } catch (dbErr) { }
+            }
+          } catch (chunkErr) {
+            console.log('[Sales] Coupang 청크 오류:', chunkErr.message);
+          }
+          cursor = chunkEnd;
+          await this.sleep(300);
+        }
+
+        await this.setConfig(configKey, now.toISOString());
+        if (inserted > 0) {
+          console.log(`[Sales] Coupang 자동 수집: ${inserted}건`);
+        }
+      }
+    } catch (e) {
+      console.error('[Sales] Coupang 수집 오류:', e.message);
     }
   }
 
