@@ -2474,20 +2474,22 @@
         const option = item.optionName || '';
         const display = option ? name + ' / ' + option : name;
         const cpNo = item.channelProductNo || '';
+        const orderId = item.productOrderId || '';
+        // 주문번호 뒤 8자리만 표시 (가독성)
+        const shortOrderId = orderId.length > 8 ? '...' + orderId.slice(-8) : orderId;
         const escaped = display.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const idTag = cpNo ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">#' + cpNo + '</span>' : '';
         if (item.alreadyAdded) {
-            return '<div class="naver-return-item" style="opacity:0.45;cursor:default;" title="이미 재고에 등록됨 (주문ID: ' + item.productOrderId + ')">'
+            return '<div class="naver-return-item" style="opacity:0.45;cursor:default;" title="주문번호: ' + orderId + '">'
                 + '<span class="item-name" style="display:flex;flex-direction:column;gap:1px;">'
                 + '<span>' + display + '</span>'
-                + '<span style="font-size:10px;color:var(--text-muted);">' + (cpNo ? '#' + cpNo + ' · ' : '') + '등록 완료</span>'
+                + '<span style="font-size:10px;color:var(--text-muted);">주문 ' + shortOrderId + ' · 등록 완료</span>'
                 + '</span>'
                 + '<span class="item-qty" style="color:#22c55e;font-size:11px;font-weight:600;">&#10003; 등록됨</span></div>';
         }
-        return '<div class="naver-return-item" onclick="selectNaverReturn(\'' + item.productOrderId + '\', \'' + escaped + '\', ' + item.qty + ', \'' + cpNo + '\')">'
+        return '<div class="naver-return-item" onclick="selectNaverReturn(\'' + orderId + '\', \'' + escaped + '\', ' + item.qty + ', \'' + cpNo + '\')" title="주문번호: ' + orderId + '">'
             + '<span class="item-name" style="display:flex;flex-direction:column;gap:1px;">'
             + '<span>' + display + '</span>'
-            + (cpNo ? '<span style="font-size:10px;color:var(--text-muted);">#' + cpNo + '</span>' : '')
+            + '<span style="font-size:10px;color:var(--text-muted);">주문 ' + shortOrderId + (cpNo ? ' · 상품 ' + cpNo : '') + '</span>'
             + '</span>'
             + '<span class="item-qty">' + item.qty + '개</span></div>';
     }
