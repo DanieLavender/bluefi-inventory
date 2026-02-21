@@ -197,10 +197,15 @@ class CoupangClient {
         if (!data || !data.data) break;
 
         for (const ret of data.data) {
+          // 첫 건만 키 로깅 (주문자명 필드 확인용)
+          if (allReturns.length === 0) {
+            console.log(`[${this.storeName}] 반품 raw 키:`, Object.keys(ret).join(', '));
+          }
           allReturns.push({
             receiptId: ret.receiptId,
             orderId: ret.orderId,
             receiptStatus: ret.receiptStatus || status,
+            buyerName: ret.buyerName || ret.ordererName || ret.requesterName || '',
             returnItems: (ret.returnItems || []).map(item => ({
               vendorItemId: String(item.vendorItemId || ''),
               vendorItemName: item.vendorItemName || '',

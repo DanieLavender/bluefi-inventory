@@ -652,7 +652,7 @@ app.get('/api/sync/returnable-items', async (req, res) => {
               claimStatus,
               claimType: 'RETURN',
               lastChangedDate: ret.createdAt || null,
-              ordererName: '',
+              ordererName: ret.buyerName || '',
               _parsed: parsed,
             });
           }
