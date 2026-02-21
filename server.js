@@ -305,10 +305,10 @@ app.post('/api/sales/fetch', async (req, res) => {
     await initSyncClients();
 
     const { resetDays } = req.body || {};
-    // Store B는 주문 조회 API 권한이 없으므로 A만 수집
     // 네이버 스토어
     const naverStores = [
       { key: 'A', client: scheduler.storeA, configKey: 'sales_last_fetch_a' },
+      { key: 'B', client: scheduler.storeB, configKey: 'sales_last_fetch_b' },
     ];
 
     // 쿠팡 클라이언트 초기화

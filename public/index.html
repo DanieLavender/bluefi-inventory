@@ -2819,7 +2819,9 @@
                 const statusBadge = isCanceled ? ' <span style="font-size:11px;color:#ef4444">취소</span>' : '';
                 const channelBadge = row.store === 'C'
                     ? '<span style="font-size:11px;background:#f43f5e;color:white;padding:1px 6px;border-radius:3px">쿠팡</span>'
-                    : '<span style="font-size:11px;background:#16a34a;color:white;padding:1px 6px;border-radius:3px">네이버</span>';
+                    : row.store === 'B'
+                    ? '<span style="font-size:11px;background:#2563eb;color:white;padding:1px 6px;border-radius:3px">네이버B</span>'
+                    : '<span style="font-size:11px;background:#16a34a;color:white;padding:1px 6px;border-radius:3px">네이버A</span>';
                 return `
                     <tr style="${rowStyle}">
                         <td>${channelBadge}</td>
