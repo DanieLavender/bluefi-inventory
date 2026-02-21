@@ -420,6 +420,7 @@
         }
         .return-add-btn {
             flex-shrink: 0;
+            margin-left: auto;
             padding: 4px 10px;
             font-size: 12px;
             font-weight: 600;
@@ -3276,10 +3277,10 @@
 
                     const buyerName = item.ordererName ? `<span class="return-item-buyer">${escapeHtml(item.ordererName)}</span>` : '';
 
-                    // 버튼 분기: 추가완료 > 실수거완료됨 > 실수거완료 버튼 (수거완료만)
+                    // 버튼 분기: 추가완료 > 실수거완료됨 > 실수거완료(수거완료) > +추가(반품완료)
                     const added = item.alreadyAdded;
                     const confirmed = item.confirmedPickup;
-                    const canConfirm = (st === 'COLLECT_DONE'); // 수거완료만 실수거완료 가능
+                    const canConfirm = (st === 'COLLECT_DONE');
                     let rowClass = 'return-item-row';
                     let btnHtml = '';
 
@@ -3290,6 +3291,8 @@
                         btnHtml = `<span class="return-confirmed-label" onclick="cancelConfirmPickup('${item.productOrderId}', this)" title="클릭하여 취소">실수거완료됨</span>`;
                     } else if (canConfirm) {
                         btnHtml = `<button class="return-confirm-btn" onclick="confirmPickup('${item.productOrderId}', this)">실수거완료</button>`;
+                    } else if (st === 'RETURN_DONE') {
+                        btnHtml = `<button class="return-add-btn" onclick="addFromRecentReturn('${item.productOrderId}', this)">+ 추가</button>`;
                     }
 
                     html += `<div class="${rowClass}" data-order-id="${item.productOrderId}">
