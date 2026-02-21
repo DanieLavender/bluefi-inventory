@@ -78,28 +78,49 @@ class CoupangClient {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  // 쿠팡 날짜 형식: yyyy-MM-dd (ISO → yyyy-MM-dd 변환)
+  formatCoupangDate(isoDate) {
+    const d = new Date(isoDate);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   // === 주문 조회 (아이템 단위 평탄화) ===
 
   async getOrderItems(fromDate, toDate) {
     const allItems = [];
-    let nextToken = null;
+    // 쿠팡 주문 상태별로 조회 (status 필수)
+    const statuses = ['ACCEPT', 'INSTRUCT', 'DEPARTURE', 'DELIVERING', 'FINAL_DELIVERY', 'NONE_TRACKING'];
+    const from = this.formatCoupangDate(fromDate);
+    const to = this.formatCoupangDate(toDate);
 
-    do {
-      const params = new URLSearchParams({
-        createdAtFrom: fromDate,
-        createdAtTo: toDate,
-        searchType: 'timeFrame',
-        maxPerPage: '50',
-      });
-      if (nextToken) {
-        params.set('nextToken', nextToken);
-      }
+    for (const status of statuses) {
+      let nextToken = null;
+      do {
+        const params = new URLSearchParams({
+          createdAtFrom: from,
+          createdAtTo: to,
+          status,
+          maxPerPage: '50',
+        });
+        if (nextToken) {
+          params.set('nextToken', nextToken);
+        }
 
-      const basePath = `/v2/providers/openapi/apis/api/v4/vendors/${this.vendorId}/ordersheets`;
-      const fullPath = `${basePath}?${params.toString()}`;
+        const basePath = `/v2/providers/openapi/apis/api/v4/vendors/${this.vendorId}/ordersheets`;
+        const fullPath = `${basePath}?${params.toString()}`;
 
-      const data = await this.apiCall('GET', fullPath);
-      if (!data || !data.data) break;
+        let data;
+        try {
+          data = await this.apiCall('GET', fullPath);
+        } catch (e) {
+          // 특정 상태에 주문 없으면 에러 무시
+          console.log(`[${this.storeName}] ${status} 조회: ${e.message.slice(0, 100)}`);
+          break;
+        }
+        if (!data || !data.data) break;
 
       for (const order of data.data) {
         const orderedAt = order.orderedAt || order.paidAt || toDate;
@@ -124,9 +145,12 @@ class CoupangClient {
         }
       }
 
-      nextToken = data.nextToken || null;
-      if (nextToken) await this.sleep(150);
-    } while (nextToken);
+        nextToken = data.nextToken || null;
+        if (nextToken) await this.sleep(150);
+      } while (nextToken);
+
+      await this.sleep(100);
+    }
 
     return allItems;
   }
@@ -136,11 +160,12 @@ class CoupangClient {
   async testConnection() {
     try {
       const now = new Date();
-      const from = new Date(now.getTime() - 60 * 60 * 1000);
+      const from = this.formatCoupangDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+      const to = this.formatCoupangDate(now);
       const params = new URLSearchParams({
-        createdAtFrom: from.toISOString(),
-        createdAtTo: now.toISOString(),
-        searchType: 'timeFrame',
+        createdAtFrom: from,
+        createdAtTo: to,
+        status: 'FINAL_DELIVERY',
         maxPerPage: '1',
       });
       const basePath = `/v2/providers/openapi/apis/api/v4/vendors/${this.vendorId}/ordersheets`;
