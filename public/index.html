@@ -673,6 +673,75 @@
         }
         .modal-actions .btn { padding: 10px 20px; }
 
+        /* ===== 23-1. Naver Return Fetch ===== */
+        .naver-fetch-btn {
+            width: 100%;
+            padding: 10px 14px;
+            margin-bottom: 16px;
+            border: 1px dashed var(--accent);
+            border-radius: var(--radius-sm);
+            background: rgba(37,99,235,0.04);
+            color: var(--accent);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            justify-content: center;
+        }
+        .naver-fetch-btn:hover { background: rgba(37,99,235,0.1); }
+        .naver-fetch-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .naver-return-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            margin-bottom: 16px;
+            display: none;
+        }
+        .naver-return-list.active { display: block; }
+        .naver-return-group {
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+        }
+        .naver-return-item {
+            padding: 8px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.15s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .naver-return-item:last-child { border-bottom: none; }
+        .naver-return-item:hover { background: rgba(37,99,235,0.06); }
+        .naver-return-item.selected { background: rgba(37,99,235,0.1); }
+        .naver-return-item .item-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .naver-return-item .item-qty {
+            font-weight: 600;
+            color: var(--accent);
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+        .naver-return-empty {
+            padding: 16px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
         /* ===== 24. Toast ===== */
         .toast {
             position: fixed;
@@ -1634,6 +1703,12 @@
     <div class="modal-overlay" id="addModal">
         <div class="modal">
             <h2>재고 추가</h2>
+            <button class="naver-fetch-btn" id="naverFetchBtn" onclick="fetchNaverReturns()">
+                <span>&#128230;</span> 네이버 반품/수거 불러오기
+            </button>
+            <div class="naver-return-list" id="naverReturnList"></div>
+            <input type="hidden" id="inputProductOrderId">
+            <input type="hidden" id="inputChannelProductNo">
             <div class="form-group">
                 <label>브랜드 *</label>
                 <select id="inputBrand" onchange="toggleCustomBrand()">
@@ -2327,6 +2402,12 @@
         document.getElementById('inputName').value = '';
         document.getElementById('inputColor').value = '';
         document.getElementById('inputQty').value = 1;
+        document.getElementById('inputProductOrderId').value = '';
+        document.getElementById('inputChannelProductNo').value = '';
+        document.getElementById('naverReturnList').classList.remove('active');
+        document.getElementById('naverReturnList').innerHTML = '';
+        document.getElementById('naverFetchBtn').disabled = false;
+        document.getElementById('naverFetchBtn').innerHTML = '<span>&#128230;</span> 네이버 반품/수거 불러오기';
         document.getElementById('addModal').classList.add('active');
     }
 
@@ -2341,6 +2422,95 @@
 
     function closeAddModal() {
         document.getElementById('addModal').classList.remove('active');
+    }
+
+    async function fetchNaverReturns() {
+        const btn = document.getElementById('naverFetchBtn');
+        const list = document.getElementById('naverReturnList');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spin" style="display:inline-block;animation:spin 1s linear infinite">&#9881;</span> 불러오는 중...';
+        try {
+            const items = await api('/api/sync/returnable-items?hours=72');
+            if (!items || items.length === 0) {
+                list.innerHTML = '<div class="naver-return-empty">최근 72시간 내 등록 가능한 반품/수거 건이 없습니다.</div>';
+                list.classList.add('active');
+                btn.innerHTML = '<span>&#128230;</span> 다시 불러오기';
+                btn.disabled = false;
+                return;
+            }
+
+            // 상태별 그룹
+            const returnDone = items.filter(i => i.claimStatus === 'RETURN_DONE');
+            const collectDone = items.filter(i => i.claimStatus === 'COLLECT_DONE');
+
+            let html = '';
+            if (returnDone.length > 0) {
+                html += '<div class="naver-return-group">&#128260; 반품완료 (' + returnDone.length + ')</div>';
+                html += returnDone.map(i => buildReturnItemHtml(i)).join('');
+            }
+            if (collectDone.length > 0) {
+                html += '<div class="naver-return-group">&#128230; 수거완료 (' + collectDone.length + ')</div>';
+                html += collectDone.map(i => buildReturnItemHtml(i)).join('');
+            }
+            list.innerHTML = html;
+            list.classList.add('active');
+            btn.innerHTML = '<span>&#128230;</span> 다시 불러오기';
+            btn.disabled = false;
+        } catch (e) {
+            list.innerHTML = '<div class="naver-return-empty">불러오기 실패: ' + e.message + '</div>';
+            list.classList.add('active');
+            btn.innerHTML = '<span>&#128230;</span> 다시 불러오기';
+            btn.disabled = false;
+        }
+    }
+
+    function buildReturnItemHtml(item) {
+        const name = item.productName || '';
+        const option = item.optionName || '';
+        const display = option ? name + ' / ' + option : name;
+        const escaped = display.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        return '<div class="naver-return-item" onclick="selectNaverReturn(\'' + item.productOrderId + '\', \'' + escaped + '\', ' + item.qty + ', \'' + (item.channelProductNo || '') + '\')">'
+            + '<span class="item-name" title="' + display.replace(/"/g, '&quot;') + '">' + display + '</span>'
+            + '<span class="item-qty">' + item.qty + '개</span></div>';
+    }
+
+    function selectNaverReturn(productOrderId, displayText, qty, channelProductNo) {
+        // displayText: "브랜드 상품명 / 옵션(컬러)"
+        // 브랜드 추출: 앞 2글자 영문
+        const brandMatch = displayText.match(/^([a-zA-Z]{2})\s/);
+        const brand = brandMatch ? brandMatch[1].toLowerCase() : '';
+        // 상품명: 브랜드 제거 후, 옵션 앞까지
+        let productName = displayText;
+        if (brandMatch) productName = productName.slice(brandMatch[0].length);
+        let color = '';
+        const slashIdx = productName.indexOf(' / ');
+        if (slashIdx >= 0) {
+            color = productName.slice(slashIdx + 3).trim();
+            productName = productName.slice(0, slashIdx).trim();
+        }
+
+        // 브랜드 선택
+        const brandSelect = document.getElementById('inputBrand');
+        if (brand) {
+            const exists = [...brandSelect.options].some(o => o.value === brand);
+            if (exists) {
+                brandSelect.value = brand;
+            } else {
+                brandSelect.value = '__custom__';
+                toggleCustomBrand();
+                document.getElementById('inputCustomBrand').value = brand;
+            }
+        }
+
+        document.getElementById('inputName').value = productName;
+        document.getElementById('inputColor').value = color;
+        document.getElementById('inputQty').value = qty;
+        document.getElementById('inputProductOrderId').value = productOrderId;
+        document.getElementById('inputChannelProductNo').value = channelProductNo;
+
+        // 선택 하이라이트
+        document.querySelectorAll('.naver-return-item').forEach(el => el.classList.remove('selected'));
+        event.currentTarget.classList.add('selected');
     }
 
     async function submitItem() {
@@ -2365,10 +2535,13 @@
 
         const name = `${brand} ${rawName}`;
 
+        const productOrderId = document.getElementById('inputProductOrderId').value || undefined;
+        const channelProductNo = document.getElementById('inputChannelProductNo').value || undefined;
+
         try {
             await api('/api/inventory', {
                 method: 'POST',
-                body: JSON.stringify({ name, color, qty, brand })
+                body: JSON.stringify({ name, color, qty, brand, productOrderId, channelProductNo })
             });
             closeAddModal();
             showToast(`"${name}" 이(가) 추가되었습니다.`, 'success');

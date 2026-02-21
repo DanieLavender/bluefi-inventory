@@ -104,16 +104,34 @@ app.get('/api/brands', async (req, res) => {
 // POST /api/inventory - 재고 추가
 app.post('/api/inventory', async (req, res) => {
   try {
-    const { name, color, qty, brand: inputBrand } = req.body;
+    const { name, color, qty, brand: inputBrand, productOrderId, channelProductNo } = req.body;
     if (!name || !color) {
       return res.status(400).json({ error: '상품명과 컬러는 필수입니다.' });
     }
     const brand = inputBrand || extractBrand(name);
+    const qtyVal = Math.max(0, parseInt(qty) || 0);
+    const trimmedName = name.trim();
+    const trimmedColor = color.trim();
+
     const result = await query(
-      'INSERT INTO inventory (name, color, qty, brand) VALUES (?, ?, ?, ?)',
-      [name.trim(), color.trim(), Math.max(0, parseInt(qty) || 0), brand]
+      'INSERT INTO inventory (name, color, qty, brand, channel_product_no) VALUES (?, ?, ?, ?, ?)',
+      [trimmedName, trimmedColor, qtyVal, brand, channelProductNo || null]
     );
     const rows = await query('SELECT * FROM inventory WHERE id = ?', [result.insertId]);
+
+    // 네이버 반품에서 불러온 건이면 sync_log에 기록 → 자동 동기화 중복 방지
+    if (productOrderId) {
+      try {
+        await query(
+          `INSERT INTO sync_log (run_id, type, store_from, store_to, product_order_id, channel_product_no, product_name, product_option, qty, status, message)
+           VALUES ('manual', 'inventory_update', 'A', NULL, ?, ?, ?, ?, ?, 'success', '수동 등록 (네이버 불러오기)')`,
+          [productOrderId, channelProductNo || null, trimmedName, trimmedColor, qtyVal]
+        );
+      } catch (logErr) {
+        console.log('[Inventory] sync_log 기록 실패 (무시):', logErr.message);
+      }
+    }
+
     res.status(201).json(rows[0]);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -473,6 +491,63 @@ app.post('/api/sales/fetch', async (req, res) => {
 });
 
 // --- Sync API Routes ---
+
+// GET /api/sync/returnable-items - 네이버 반품/수거 완료 건 중 재고 등록 가능 목록
+app.get('/api/sync/returnable-items', async (req, res) => {
+  try {
+    await initSyncClients();
+    const hours = parseInt(req.query.hours) || 72;
+    const now = new Date();
+    const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
+
+    // 1. 반품완료 + 수거완료 건 조회
+    const returnableOrders = await scheduler.storeA.getReturnableOrders(from.toISOString(), now.toISOString());
+    if (returnableOrders.length === 0) {
+      return res.json([]);
+    }
+
+    // 2. 상세 조회
+    const orderIds = returnableOrders.map(o => o.productOrderId);
+    const claimStatusMap = {};
+    for (const o of returnableOrders) {
+      claimStatusMap[o.productOrderId] = o.claimStatus;
+    }
+
+    const details = await scheduler.storeA.getProductOrderDetail(orderIds);
+
+    // 3. sync_log에서 이미 inventory_update 처리된 productOrderId 제외
+    let processedIds = new Set();
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(',');
+      const logRows = await query(
+        `SELECT product_order_id FROM sync_log WHERE type = 'inventory_update' AND product_order_id IN (${placeholders})`,
+        orderIds
+      );
+      processedIds = new Set(logRows.map(r => r.product_order_id));
+    }
+
+    // 4. 정리된 목록 반환
+    const items = [];
+    for (const detail of details) {
+      const po = detail.productOrder || detail;
+      const productOrderId = po.productOrderId || '';
+      if (processedIds.has(productOrderId)) continue;
+
+      items.push({
+        productOrderId,
+        productName: po.productName || '',
+        optionName: po.optionName || null,
+        qty: po.quantity || 1,
+        channelProductNo: String(po.channelProductNo || po.productId || ''),
+        claimStatus: claimStatusMap[productOrderId] || '',
+      });
+    }
+
+    res.json(items);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // POST /api/sync/run - 수동 즉시 동기화
 app.post('/api/sync/run', async (req, res) => {

@@ -550,6 +550,60 @@ class NaverCommerceClient {
     );
   }
 
+  // === Store A: Returnable orders (반품완료 + 수거완료) ===
+
+  /**
+   * Get returnable orders (RETURN_DONE + COLLECT_DONE) in a time range
+   * @param {string} fromDate ISO datetime
+   * @param {string} toDate ISO datetime
+   * @returns {Array} { productOrderId, claimStatus } objects
+   */
+  async getReturnableOrders(fromDate, toDate) {
+    const typesToCheck = ['CLAIM_REQUESTED', 'COLLECT_DONE', 'CLAIM_COMPLETED'];
+    const allStatuses = [];
+
+    for (const changeType of typesToCheck) {
+      try {
+        const params = new URLSearchParams({
+          lastChangedFrom: fromDate,
+          lastChangedTo: toDate,
+          lastChangedType: changeType,
+        });
+
+        const data = await this.apiCall(
+          'GET',
+          `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
+        );
+
+        if (data?.data?.lastChangeStatuses) {
+          for (const s of data.data.lastChangeStatuses) {
+            allStatuses.push(s);
+          }
+        }
+      } catch (e) {
+        console.log(`[${this.storeName}] ${changeType} 조회 오류 (무시):`, e.message);
+      }
+      await this.sleep(300);
+    }
+
+    // 반품 관련 건 필터: claimType=RETURN & (claimStatus=RETURN_DONE or COLLECT_DONE)
+    const returnStatuses = allStatuses.filter(s => {
+      const claimType = (s.claimType || '').toUpperCase();
+      const claimStatus = (s.claimStatus || '').toUpperCase();
+      return claimType === 'RETURN' && (claimStatus === 'RETURN_DONE' || claimStatus === 'COLLECT_DONE');
+    });
+
+    // 중복 제거
+    const seen = new Set();
+    return returnStatuses
+      .filter(s => {
+        if (seen.has(s.productOrderId)) return false;
+        seen.add(s.productOrderId);
+        return true;
+      })
+      .map(s => ({ productOrderId: s.productOrderId, claimStatus: s.claimStatus }));
+  }
+
   // === Connection test ===
 
   async testConnection() {
