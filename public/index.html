@@ -2468,14 +2468,22 @@
         const name = item.productName || '';
         const option = item.optionName || '';
         const display = option ? name + ' / ' + option : name;
+        const cpNo = item.channelProductNo || '';
         const escaped = display.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const idTag = cpNo ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">#' + cpNo + '</span>' : '';
         if (item.alreadyAdded) {
-            return '<div class="naver-return-item" style="opacity:0.5;cursor:default;" title="이미 재고에 등록된 건입니다">'
-                + '<span class="item-name">' + display + '</span>'
-                + '<span class="item-qty" style="color:var(--text-muted);font-size:11px;">등록됨</span></div>';
+            return '<div class="naver-return-item" style="opacity:0.45;cursor:default;" title="이미 재고에 등록됨 (주문ID: ' + item.productOrderId + ')">'
+                + '<span class="item-name" style="display:flex;flex-direction:column;gap:1px;">'
+                + '<span>' + display + '</span>'
+                + '<span style="font-size:10px;color:var(--text-muted);">' + (cpNo ? '#' + cpNo + ' · ' : '') + '등록 완료</span>'
+                + '</span>'
+                + '<span class="item-qty" style="color:#22c55e;font-size:11px;font-weight:600;">&#10003; 등록됨</span></div>';
         }
-        return '<div class="naver-return-item" onclick="selectNaverReturn(\'' + item.productOrderId + '\', \'' + escaped + '\', ' + item.qty + ', \'' + (item.channelProductNo || '') + '\')">'
-            + '<span class="item-name" title="' + display.replace(/"/g, '&quot;') + '">' + display + '</span>'
+        return '<div class="naver-return-item" onclick="selectNaverReturn(\'' + item.productOrderId + '\', \'' + escaped + '\', ' + item.qty + ', \'' + cpNo + '\')">'
+            + '<span class="item-name" style="display:flex;flex-direction:column;gap:1px;">'
+            + '<span>' + display + '</span>'
+            + (cpNo ? '<span style="font-size:10px;color:var(--text-muted);">#' + cpNo + '</span>' : '')
+            + '</span>'
             + '<span class="item-qty">' + item.qty + '개</span></div>';
     }
 

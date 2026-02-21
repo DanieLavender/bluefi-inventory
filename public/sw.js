@@ -1,10 +1,11 @@
-const CACHE_VERSION = 'bluefi-v3';
+const CACHE_VERSION = 'bluefi-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/icons/icon.svg',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+  '/icons/badge-96.png',
   '/manifest.json',
 ];
 
@@ -76,8 +77,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || '블루파이', {
       body: data.body || '',
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
+      icon: '/icons/icon-512.png',
+      badge: '/icons/badge-96.png',
     })
   );
 });

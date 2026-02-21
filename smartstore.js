@@ -560,7 +560,7 @@ class NaverCommerceClient {
    * @returns {Array} { productOrderId, claimStatus } objects
    */
   async getReturnableOrders(fromDate, toDate) {
-    const typesToCheck = ['COLLECT_DONE', 'CLAIM_COMPLETED'];
+    const typesToCheck = ['CLAIM_REQUESTED', 'COLLECT_DONE', 'CLAIM_COMPLETED'];
     const allStatuses = [];
     const fromMs = new Date(fromDate).getTime();
     const toMs = new Date(toDate).getTime();
@@ -586,8 +586,10 @@ class NaverCommerceClient {
             `/v1/pay-order/seller/product-orders/last-changed-statuses?${params}`
           );
 
-          if (data?.data?.lastChangeStatuses) {
-            for (const s of data.data.lastChangeStatuses) {
+          const found = data?.data?.lastChangeStatuses || [];
+          if (found.length > 0) {
+            console.log(`[${this.storeName}] ${changeType} ${chunkFrom.slice(0,10)}: ${found.length}건`);
+            for (const s of found) {
               allStatuses.push(s);
             }
           }
@@ -599,12 +601,27 @@ class NaverCommerceClient {
       cursor = chunkEnd;
     }
 
+    console.log(`[${this.storeName}] 전체 클레임 건: ${allStatuses.length}건`);
+    if (allStatuses.length > 0) {
+      allStatuses.forEach(s => {
+        console.log(`  - claimType=${s.claimType} claimStatus=${s.claimStatus} orderStatus=${s.productOrderStatus} id=${s.productOrderId}`);
+      });
+    }
+
     // 반품 관련 건 필터: claimType=RETURN & (claimStatus=RETURN_DONE or COLLECT_DONE)
+    // 또는 productOrderStatus=RETURNED (반품 완료 상태)
     const returnStatuses = allStatuses.filter(s => {
       const claimType = (s.claimType || '').toUpperCase();
       const claimStatus = (s.claimStatus || '').toUpperCase();
-      return claimType === 'RETURN' && (claimStatus === 'RETURN_DONE' || claimStatus === 'COLLECT_DONE');
+      const orderStatus = (s.productOrderStatus || '').toUpperCase();
+      return claimType === 'RETURN' && (
+        claimStatus === 'RETURN_DONE' ||
+        claimStatus === 'COLLECT_DONE' ||
+        orderStatus === 'RETURNED'
+      );
     });
+
+    console.log(`[${this.storeName}] 필터 후: ${returnStatuses.length}건 (반품완료+수거완료)`);
 
     // 중복 제거
     const seen = new Set();
