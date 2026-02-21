@@ -15,16 +15,18 @@
 | 인증 | bcryptjs | ^3.0.2 |
 | 환경변수 | dotenv | ^16.x |
 | 프론트 | Vanilla HTML/CSS/JS | - |
-| 배포 | Render.com (예정) | - |
+| 푸시 알림 | web-push | ^3.x |
+| 배포 | Render.com | - |
 
 ## 프로젝트 구조
 ```
 C:\claude\Shoppingmall\
 ├── CLAUDE.md              ← 이 파일 (프로젝트 컨텍스트)
 ├── server.js              ← Express 서버 + REST API + 동기화 API
-├── database.js            ← SQLite 초기화 + 시드 데이터 + sync 테이블
+├── database.js            ← MySQL 초기화 + 시드 데이터 + sync 테이블
 ├── smartstore.js          ← 네이버 커머스 API 클라이언트 (NaverCommerceClient)
-├── sync-scheduler.js      ← 반품→재등록 동기화 스케줄러 (SyncScheduler)
+├── coupang.js             ← 쿠팡 API 클라이언트 (CoupangClient)
+├── sync-scheduler.js      ← 반품→재등록 동기화 + 재고 자동 반영 + 매출 수집
 ├── package.json           ← 의존성 정의
 ├── package-lock.json
 ├── render.yaml            ← Render.com 배포 설정 (스토어 환경변수 포함)
@@ -42,18 +44,20 @@ C:\claude\Shoppingmall\
 ```sql
 CREATE TABLE inventory (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  name TEXT NOT NULL,          -- 상품명 (예: "hm 캐시미어 울 라운드니트")
-  color VARCHAR(255) NOT NULL, -- 컬러 (예: "아이보리")
-  qty INT NOT NULL DEFAULT 0,  -- 수량
-  brand VARCHAR(10) DEFAULT '',-- 브랜드 코드 (예: "hm", "it", "ls")
+  name TEXT NOT NULL,                        -- 상품명 (예: "hm 캐시미어 울 라운드니트")
+  color VARCHAR(255) NOT NULL,               -- 컬러 (예: "아이보리")
+  qty INT NOT NULL DEFAULT 0,                -- 수량
+  brand VARCHAR(10) DEFAULT '',              -- 브랜드 코드 (예: "hm", "it", "ls")
+  channel_product_no VARCHAR(255) DEFAULT NULL, -- 네이버 스토어 상품번호 (점진적 연결)
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT NULL  -- 수량 변경 시 자동 갱신
+  updated_at DATETIME DEFAULT NULL           -- 수량 변경 시 자동 갱신
 );
 ```
 - **DB 호스팅**: 회사 MySQL 서버 (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME 환경변수)
 - 초기 데이터: database.js의 seedData() 함수에 276개 하드코딩
 - brand는 상품명 앞 2글자 알파벳에서 자동 추출 (extractBrand 함수)
 - updated_at은 수량 변경 시만 NOW()로 갱신
+- channel_product_no: 반품 동기화 시 첫 텍스트 매칭 성공 시 자동 저장 (점진적 연결)
 - database.js는 `mysql2` Pool 싱글톤 패턴, 모든 DB 접근은 비동기(`async/await`)
 - `key` 컬럼은 MySQL 예약어 → 항상 백틱(`` `key` ``)으로 감싸기
 
@@ -67,6 +71,14 @@ CREATE TABLE inventory (
 | PUT | /api/inventory/:id | 수량 수정 (body: qty) → updated_at 자동 갱신 |
 | DELETE | /api/inventory/:id | 단건 삭제 |
 | POST | /api/inventory/delete-bulk | 일괄 삭제 (body: ids[]) |
+| GET | /api/sales/stats | 오늘 매출 요약 (어제 비교) |
+| GET | /api/sales/recent | 주문 목록 (store, date, limit 파라미터) |
+| POST | /api/sales/fetch | 수동 매출 데이터 수집 (resetDays 옵션) |
+| GET | /api/health | 헬스체크 (서버 keep-alive용) |
+| GET | /api/push/vapid-key | VAPID 공개키 반환 |
+| POST | /api/push/subscribe | 푸시 구독 저장 |
+| POST | /api/push/unsubscribe | 푸시 구독 해제 |
+| POST | /api/push/test | 테스트 푸시 발송 |
 
 ## 프론트엔드 기능
 - **SPA 라우팅**: 해시 기반 (#inventory, #sales, #log, #brands, #settings, #login)
@@ -117,14 +129,29 @@ ag, ed, hm, ig, it, lc, ls, mo, mu, mv, ov, ps, ru, sm, ve, vi
 ## 스마트스토어 동기화 시스템
 
 ### 개요
-A 스마트스토어 반품 완료 → B 스마트스토어 상품 수량 증가 (자동/수동)
+A 스마트스토어 반품 완료 → B 스마트스토어 상품 수량 증가 + inventory 재고 자동 반영
 
 ### 동기화 흐름
 1. A 스토어 반품 완료 건 조회 (네이버 커머스 API)
 2. 반품 상세 조회 (상품명, 옵션, 수량)
 3. product_mapping에서 B 매핑 확인
 4. 매핑 있으면 → B 수량 증가 / 없으면 → 자동 매칭 시도 or 수동 매핑 유도
-5. 모든 처리 sync_log에 기록
+5. **inventory 재고 자동 반영** (반품 → 재고 수량 증가)
+6. 모든 처리 sync_log에 기록 + 푸시 알림
+
+### 재고 자동 반영 (updateInventoryFromReturn)
+반품 건이 B 스토어에 처리된 후, inventory 테이블에도 자동 반영:
+
+```
+0단계: productOrderId로 중복 체크 → 이미 처리된 반품 스킵
+1단계: channel_product_no로 직접 매칭 (연결된 재고)
+2단계: 텍스트 정확 매칭 → 점진적으로 channel_product_no 연결 저장
+3단계: 텍스트 유사 매칭 → 점진적 연결
+4단계: 매칭 실패 → 신규 등록 (channel_product_no 포함)
+```
+
+- **수동 반영 추정**: 매칭된 재고의 updated_at이 last_sync_time 이후면 수량 건드리지 않고 연결만 저장
+- **점진적 연결**: 기존 276개 재고는 channel_product_no가 null, 반품 처리 시 자동 연결
 
 ### Sync API
 | Method | Path | 설명 |
@@ -142,14 +169,33 @@ A 스마트스토어 반품 완료 → B 스마트스토어 상품 수량 증가
 
 ### Sync DB 테이블
 - **sync_log**: 동기화 이력 (run_id, type, status, product info)
+  - type: `return_detect`, `qty_increase`, `product_create`, `inventory_update`, `error`
 - **sync_config**: key-value 설정 (sync_enabled, sync_interval_minutes 등)
 - **product_mapping**: A↔B 상품 매핑 (match_status: matched/unmatched/manual)
+- **sales_orders**: 매출 주문 데이터 (store A/B/C, product_order_id UNIQUE)
+- **push_subscriptions**: 웹 푸시 구독 (endpoint, p256dh, auth)
 
 ### 환경변수
 ```
 STORE_A_CLIENT_ID / STORE_A_CLIENT_SECRET — A 스토어 API 키
 STORE_B_CLIENT_ID / STORE_B_CLIENT_SECRET — B 스토어 API 키
+COUPANG_ACCESS_KEY / COUPANG_SECRET_KEY / COUPANG_VENDOR_ID — 쿠팡 API 키
+RENDER_GIT_COMMIT — Render 자동 설정 (앱 업데이트 감지용)
 ```
+
+## 푸시 알림 (PWA Web Push)
+- **VAPID 키**: 최초 실행 시 자동 생성 → sync_config에 저장
+- **알림 발생 조건**:
+  - 반품 → B 스토어 신규 등록 시
+  - 반품 → 재고 자동 반영 시
+  - 신규 매출 발생 시
+  - 앱 업데이트 배포 시 (RENDER_GIT_COMMIT 변경 감지)
+
+## 매출 수집
+- **네이버 A/B 스토어** + **쿠팡** 매출 자동 수집
+- 동기화 실행 시 자동 수집 (fetchSalesData)
+- 수동 수집: POST /api/sales/fetch (resetDays로 재수집 가능)
+- INSERT IGNORE + affectedRows 확인으로 중복 카운트 방지
 
 ## 주의사항
 - **DB**: MySQL 8.0 사용, `DB_HOST/DB_USER/DB_PASSWORD/DB_NAME` 환경변수 필수
@@ -161,3 +207,4 @@ STORE_B_CLIENT_ID / STORE_B_CLIENT_SECRET — B 스토어 API 키
 - inventory 테이블이 비어있으면 initDb()에서 276개 시드 자동 삽입
 - extractBrand()가 server.js와 database.js에 각각 존재 (중복이지만 의도적 — 모듈 독립성)
 - 모든 DB 접근은 `async/await` — server.js, sync-scheduler.js 전체 비동기
+- INSERT IGNORE 후 실제 삽입 확인: `result.affectedRows > 0` (매출 수집 등)
