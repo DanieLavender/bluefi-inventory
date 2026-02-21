@@ -1709,9 +1709,17 @@
     <div class="modal-overlay" id="addModal">
         <div class="modal">
             <h2>재고 추가</h2>
-            <button class="naver-fetch-btn" id="naverFetchBtn" onclick="fetchNaverReturns()">
-                <span>&#128230;</span> 네이버 반품/수거 불러오기
-            </button>
+            <div style="display:flex;gap:8px;margin-bottom:16px;">
+                <select id="naverFetchDays" style="flex:0 0 auto;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:white;color:var(--text-primary);">
+                    <option value="72">3일</option>
+                    <option value="168">7일</option>
+                    <option value="360" selected>15일</option>
+                    <option value="720">30일</option>
+                </select>
+                <button class="naver-fetch-btn" id="naverFetchBtn" onclick="fetchNaverReturns()" style="margin-bottom:0;flex:1;">
+                    <span>&#128230;</span> 네이버 반품/수거 불러오기
+                </button>
+            </div>
             <div class="naver-return-list" id="naverReturnList"></div>
             <input type="hidden" id="inputProductOrderId">
             <div class="form-group">
@@ -2456,9 +2464,11 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="spin" style="display:inline-block;animation:spin 1s linear infinite">&#9881;</span> 불러오는 중...';
         try {
-            const items = await api('/api/sync/returnable-items');
+            const hours = document.getElementById('naverFetchDays').value;
+            const daysLabel = document.getElementById('naverFetchDays').selectedOptions[0].text;
+            const items = await api('/api/sync/returnable-items?hours=' + hours);
             if (!items || items.length === 0) {
-                list.innerHTML = '<div class="naver-return-empty">최근 15일 내 반품/수거 완료 건이 없습니다.</div>';
+                list.innerHTML = '<div class="naver-return-empty">최근 ' + daysLabel + ' 내 반품/수거 완료 건이 없습니다.</div>';
                 list.classList.add('active');
                 btn.innerHTML = '<span>&#128230;</span> 다시 불러오기';
                 btn.disabled = false;
