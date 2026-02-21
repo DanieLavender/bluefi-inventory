@@ -206,6 +206,7 @@ class CoupangClient {
               vendorItemName: item.vendorItemName || '',
               returnQuantity: item.returnQuantity || 1,
               sellerProductItemName: item.sellerProductItemName || '',
+              _raw: item,
             })),
             createdAt: ret.createdAt || '',
           });

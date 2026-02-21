@@ -459,6 +459,45 @@
         .store-badge { display:inline-block; font-size:9px; padding:1px 4px; border-radius:3px; color:white; margin-right:4px; font-weight:700; vertical-align:middle; }
         .store-coupang { background:#E44D2E; }
         .store-naver { background:#03C75A; }
+
+        /* ===== 실수거완료 버튼/라벨 ===== */
+        .return-confirm-btn {
+            flex-shrink:0; padding:4px 10px; font-size:12px; font-weight:600;
+            color:#D97706; background:#FFFBEB; border:1px solid #FDE68A;
+            border-radius:var(--radius-sm); cursor:pointer; transition:all 0.15s; white-space:nowrap;
+        }
+        .return-confirm-btn:hover { background:#D97706; color:white; border-color:#D97706; }
+        .return-confirmed-label {
+            flex-shrink:0; padding:4px 10px; font-size:11px; font-weight:600;
+            color:#D97706; background:#FFFBEB; border:1px solid #FDE68A;
+            border-radius:var(--radius-sm); white-space:nowrap;
+        }
+
+        /* ===== 실수거완료 리스트 섹션 ===== */
+        .confirmed-returns-section {
+            background:var(--bg-card); border:1px solid var(--border);
+            border-radius:var(--radius); margin-bottom:16px; overflow:hidden;
+        }
+        .confirmed-returns-header {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:12px 16px; cursor:pointer; user-select:none;
+        }
+        .confirmed-returns-header:hover { background:var(--bg-primary); }
+        .confirmed-returns-title {
+            display:flex; align-items:center; gap:8px;
+            font-size:14px; font-weight:600; color:var(--text-primary);
+        }
+        .confirmed-returns-count {
+            background:#D97706; color:white; font-size:11px; font-weight:600;
+            padding:1px 7px; border-radius:10px; min-width:20px; text-align:center;
+        }
+        .confirmed-returns-body {
+            border-top:1px solid var(--border); max-height:400px; overflow-y:auto;
+        }
+        .confirmed-returns-empty {
+            padding:24px; text-align:center; color:var(--text-muted); font-size:13px;
+        }
+
         @media (max-width: 768px) {
             .recent-returns-header { padding: 10px 12px; }
             .return-item-row {
@@ -1684,6 +1723,29 @@
                     </div>
                 </div>
 
+                <!-- 실수거완료 리스트 섹션 -->
+                <div class="confirmed-returns-section" id="confirmedReturnsSection">
+                    <div class="confirmed-returns-header" onclick="toggleConfirmedReturns()">
+                        <div class="confirmed-returns-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            <span>실수거완료</span>
+                            <span class="confirmed-returns-count" id="confirmedReturnsCount" style="display:none">0</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
+                            <button class="btn btn-accent btn-sm" onclick="fetchConfirmedReturns()">새로고침</button>
+                            <button class="recent-returns-toggle open" id="confirmedToggleBtn" onclick="event.stopPropagation();toggleConfirmedReturns()">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="confirmed-returns-body" id="confirmedReturnsBody">
+                        <div class="confirmed-returns-empty" id="confirmedReturnsEmpty">
+                            실수거완료된 항목이 없습니다.
+                        </div>
+                        <div class="recent-returns-list" id="confirmedReturnsList"></div>
+                    </div>
+                </div>
+
                 <!-- Toolbar -->
                 <div class="toolbar">
                     <div class="search-box">
@@ -2227,6 +2289,10 @@
             closeSidebar();
         }
 
+        // 인벤토리 페이지 진입 시 실수거완료 리스트 자동 로드
+        if (page === 'inventory') {
+            fetchConfirmedReturns();
+        }
         // Load brand cards when navigating to brands page
         if (page === 'brands') {
             loadBrandCards();
@@ -2991,18 +3057,12 @@
             // 전역에 저장 (합산 선택용)
             window._naverReturnItems = items;
 
-            // 상태별 그룹 (상세 조회의 현재 claimStatus 기준)
-            const collecting = items.filter(i => i.claimStatus === 'COLLECTING');
-            const collectDone = items.filter(i => i.claimStatus === 'COLLECT_DONE');
-            const returnDone = items.filter(i => i.claimStatus === 'RETURN_DONE');
-            const returnRequest = items.filter(i => i.claimStatus === 'RETURN_REQUEST');
-            const others = items.filter(i => !['COLLECTING','COLLECT_DONE','RETURN_DONE','RETURN_REQUEST'].includes(i.claimStatus));
+            // 상태별 그룹 (수거완료/반품완료/실수거완료만 표시)
+            const collectDone = items.filter(i => !i.confirmedPickup && i.claimStatus === 'COLLECT_DONE');
+            const returnDone = items.filter(i => !i.confirmedPickup && i.claimStatus === 'RETURN_DONE');
+            const confirmed = items.filter(i => i.confirmedPickup);
 
             let html = '';
-            if (collecting.length > 0) {
-                html += '<div class="naver-return-group">&#128666; 수거중 (' + collecting.length + ')</div>';
-                html += collecting.map(i => buildReturnItemHtml(i)).join('');
-            }
             if (collectDone.length > 0) {
                 html += '<div class="naver-return-group">&#128230; 수거완료 (' + collectDone.length + ')</div>';
                 html += collectDone.map(i => buildReturnItemHtml(i)).join('');
@@ -3011,13 +3071,9 @@
                 html += '<div class="naver-return-group">&#128260; 반품완료 (' + returnDone.length + ')</div>';
                 html += returnDone.map(i => buildReturnItemHtml(i)).join('');
             }
-            if (returnRequest.length > 0) {
-                html += '<div class="naver-return-group">&#128203; 반품요청 (' + returnRequest.length + ')</div>';
-                html += returnRequest.map(i => buildReturnItemHtml(i)).join('');
-            }
-            if (others.length > 0) {
-                html += '<div class="naver-return-group">&#128196; 기타 (' + others.length + ')</div>';
-                html += others.map(i => buildReturnItemHtml(i)).join('');
+            if (confirmed.length > 0) {
+                html += '<div class="naver-return-group">&#9989; 실수거완료 (' + confirmed.length + ')</div>';
+                html += confirmed.map(i => buildReturnItemHtml(i)).join('');
             }
 
             // 동일 상품 색상별 합산 그룹
@@ -3181,26 +3237,24 @@
             countBadge.textContent = items.length;
             countBadge.style.display = '';
 
-            // 상태별 그룹핑
+            // 상태별 그룹핑 (수거완료/반품완료/실수거완료 3그룹)
             const groups = {};
-            const statusOrder = ['COLLECTING', 'COLLECT_DONE', 'RETURN_DONE', 'RETURN_REQUEST'];
+            const statusOrder = ['COLLECT_DONE', 'RETURN_DONE', 'PICKUP_CONFIRMED'];
             const statusLabels = {
-                'COLLECTING': '수거중',
                 'COLLECT_DONE': '수거완료',
                 'RETURN_DONE': '반품완료',
-                'RETURN_REQUEST': '반품요청'
+                'PICKUP_CONFIRMED': '실수거완료'
             };
 
             for (const item of items) {
-                const st = item.claimStatus || '기타';
+                // 실수거완료된 건은 별도 그룹
+                const st = item.confirmedPickup ? 'PICKUP_CONFIRMED' : (item.claimStatus || '기타');
                 if (!groups[st]) groups[st] = [];
                 groups[st].push(item);
             }
 
             let html = '';
-            const allStatuses = [...statusOrder, ...Object.keys(groups).filter(k => !statusOrder.includes(k))];
-
-            for (const st of allStatuses) {
+            for (const st of statusOrder) {
                 if (!groups[st] || groups[st].length === 0) continue;
                 const label = statusLabels[st] || st;
                 html += `<div class="return-status-group">${label} (${groups[st].length}건)</div>`;
@@ -3219,11 +3273,20 @@
 
                     const buyerName = item.ordererName ? `<span class="return-item-buyer">${escapeHtml(item.ordererName)}</span>` : '';
 
+                    // 버튼 분기: 추가완료 > 실수거완료됨 > 실수거완료 버튼
                     const added = item.alreadyAdded;
-                    const rowClass = added ? 'return-item-row return-item-added' : 'return-item-row';
-                    const btnHtml = added
-                        ? `<span class="return-added-label">추가완료</span>`
-                        : `<button class="return-add-btn" onclick="addFromRecentReturn('${item.productOrderId}', this)">+ 추가</button>`;
+                    const confirmed = item.confirmedPickup;
+                    let rowClass = 'return-item-row';
+                    let btnHtml = '';
+
+                    if (added) {
+                        rowClass += ' return-item-added';
+                        btnHtml = '<span class="return-added-label">추가완료</span>';
+                    } else if (confirmed) {
+                        btnHtml = '<span class="return-confirmed-label">실수거완료됨</span>';
+                    } else {
+                        btnHtml = `<button class="return-confirm-btn" onclick="confirmPickup('${item.productOrderId}', this)">실수거완료</button>`;
+                    }
 
                     html += `<div class="${rowClass}" data-order-id="${item.productOrderId}">
                         <div class="return-item-info">
@@ -3240,6 +3303,9 @@
             }
 
             list.innerHTML = html;
+
+            // 실수거완료 리스트도 동시 갱신
+            fetchConfirmedReturns();
         } catch (e) {
             empty.style.display = 'block';
             empty.textContent = '반품 내역 조회 실패: ' + e.message;
@@ -3284,6 +3350,152 @@
             document.getElementById('inputQty').value = item.qty || 1;
             document.getElementById('inputProductOrderId').value = productOrderId;
             document.getElementById('inputChannelProductNo').value = item.channelProductNo || '';
+        }, 50);
+    }
+
+    // ===== 실수거완료 처리 =====
+    async function confirmPickup(productOrderId, btnEl) {
+        const items = window._naverReturnItems || [];
+        const item = items.find(i => i.productOrderId === productOrderId);
+        if (!item) return;
+
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '처리 중...'; }
+
+        try {
+            await api('/api/returns/confirm-pickup', {
+                method: 'POST',
+                body: JSON.stringify({
+                    items: [{
+                        productOrderId: item.productOrderId,
+                        store: item.store,
+                        productName: item.productName,
+                        optionName: item.optionName,
+                        qty: item.qty,
+                        channelProductNo: item.channelProductNo,
+                    }]
+                })
+            });
+
+            // 버튼을 라벨로 교체
+            if (btnEl) {
+                const label = document.createElement('span');
+                label.className = 'return-confirmed-label';
+                label.textContent = '실수거완료됨';
+                btnEl.replaceWith(label);
+            }
+
+            showToast('실수거완료 처리되었습니다.', 'success');
+            fetchConfirmedReturns();
+        } catch (e) {
+            showToast('실수거완료 처리 실패: ' + e.message, 'error');
+            if (btnEl) { btnEl.disabled = false; btnEl.textContent = '실수거완료'; }
+        }
+    }
+
+    // ===== 실수거완료 리스트 =====
+    let _confirmedReturnsOpen = true;
+
+    function toggleConfirmedReturns() {
+        _confirmedReturnsOpen = !_confirmedReturnsOpen;
+        const body = document.getElementById('confirmedReturnsBody');
+        const toggleBtn = document.getElementById('confirmedToggleBtn');
+        body.style.display = _confirmedReturnsOpen ? 'block' : 'none';
+        toggleBtn.classList.toggle('open', _confirmedReturnsOpen);
+    }
+
+    async function fetchConfirmedReturns() {
+        const list = document.getElementById('confirmedReturnsList');
+        const empty = document.getElementById('confirmedReturnsEmpty');
+        const countBadge = document.getElementById('confirmedReturnsCount');
+
+        try {
+            const items = await api('/api/returns/confirmed');
+            window._confirmedReturnItems = items;
+
+            if (!items || items.length === 0) {
+                list.innerHTML = '';
+                empty.style.display = 'block';
+                empty.textContent = '실수거완료된 항목이 없습니다.';
+                countBadge.style.display = 'none';
+                return;
+            }
+
+            empty.style.display = 'none';
+            const unadded = items.filter(i => !i.alreadyAdded);
+            countBadge.textContent = unadded.length;
+            countBadge.style.display = unadded.length > 0 ? '' : 'none';
+
+            let html = '';
+            for (const item of items) {
+                const { brand } = extractBrandFromName(item.product_name || '');
+                const brandClass = brand ? `brand-${brand}` : 'brand-default';
+                const brandBadge = brand ? `<span class="brand-badge ${brandClass}" style="font-size:10px;padding:1px 5px;">${brand}</span>` : '';
+                const storeBadge = item.store === 'C'
+                    ? '<span class="store-badge store-coupang">쿠팡</span>'
+                    : '<span class="store-badge store-naver">네이버</span>';
+                const { color, size } = parseProductOption(item.option_name);
+                const colorText = color || '(옵션없음)';
+                const sizeText = size ? ` · ${size}` : '';
+                const dateStr = item.confirmed_at ? new Date(item.confirmed_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+                const added = item.alreadyAdded;
+                const rowClass = added ? 'return-item-row return-item-added' : 'return-item-row';
+                const btnHtml = added
+                    ? '<span class="return-added-label">추가완료</span>'
+                    : `<button class="return-add-btn" onclick="addFromConfirmedReturn('${item.product_order_id}', this)">+ 추가</button>`;
+
+                html += `<div class="${rowClass}" data-order-id="${item.product_order_id}">
+                    <div class="return-item-info">
+                        ${storeBadge}${brandBadge}
+                        <span class="return-item-name">${escapeHtml(item.product_name || '')}</span>
+                        <span class="return-item-option">${escapeHtml(colorText)}${escapeHtml(sizeText)}</span>
+                        <span class="return-item-qty">${item.qty || 1}개</span>
+                        <span class="return-item-date">${dateStr}</span>
+                    </div>
+                    ${btnHtml}
+                </div>`;
+            }
+
+            list.innerHTML = html;
+        } catch (e) {
+            empty.style.display = 'block';
+            empty.textContent = '실수거완료 목록 조회 실패: ' + e.message;
+            list.innerHTML = '';
+            countBadge.style.display = 'none';
+        }
+    }
+
+    function addFromConfirmedReturn(productOrderId, btnEl) {
+        const items = window._confirmedReturnItems || [];
+        const item = items.find(i => i.product_order_id === productOrderId);
+        if (!item) return;
+
+        openAddModal();
+
+        setTimeout(() => {
+            const fullName = item.product_name || '';
+            const { color, size } = parseProductOption(item.option_name);
+            const { brand, name: productName } = extractBrandFromName(fullName);
+
+            const brandSelect = document.getElementById('inputBrand');
+            if (brand) {
+                const exists = [...brandSelect.options].some(o => o.value === brand);
+                if (exists) {
+                    brandSelect.value = brand;
+                    document.getElementById('customBrandGroup').style.display = 'none';
+                } else {
+                    brandSelect.value = '__custom__';
+                    toggleCustomBrand();
+                    document.getElementById('inputCustomBrand').value = brand;
+                }
+            }
+
+            document.getElementById('inputName').value = productName;
+            document.getElementById('inputColor').value = color;
+            document.getElementById('inputSize').value = size || '';
+            document.getElementById('inputQty').value = item.qty || 1;
+            document.getElementById('inputProductOrderId').value = productOrderId;
+            document.getElementById('inputChannelProductNo').value = item.channel_product_no || '';
         }, 50);
     }
 
@@ -3402,16 +3614,31 @@
             });
             closeAddModal();
             showToast(`"${name}" 이(가) 추가되었습니다.`, 'success');
-            // 최근 반품 리스트에서 해당 항목 "추가됨" 표시
+            // 반품/실수거완료 리스트에서 해당 항목 "추가됨" 표시
             if (productOrderId) {
                 const orderIds = productOrderId.includes(',') ? productOrderId.split(',') : [productOrderId];
                 for (const oid of orderIds) {
-                    const row = document.querySelector(`.return-item-row[data-order-id="${oid.trim()}"]`);
-                    if (row) {
+                    // 최근 반품 + 실수거완료 양쪽 섹션에서 갱신
+                    const rows = document.querySelectorAll(`.return-item-row[data-order-id="${oid.trim()}"]`);
+                    for (const row of rows) {
+                        row.classList.add('return-item-added');
                         const btn = row.querySelector('.return-add-btn');
-                        if (btn) { btn.classList.add('added'); btn.textContent = '추가됨'; btn.onclick = null; }
+                        if (btn) {
+                            const label = document.createElement('span');
+                            label.className = 'return-added-label';
+                            label.textContent = '추가완료';
+                            btn.replaceWith(label);
+                        }
+                        // 실수거완료됨 라벨도 추가완료로 변경
+                        const confirmLabel = row.querySelector('.return-confirmed-label');
+                        if (confirmLabel) {
+                            confirmLabel.className = 'return-added-label';
+                            confirmLabel.textContent = '추가완료';
+                        }
                     }
                 }
+                // 실수거완료 리스트 카운트 갱신
+                fetchConfirmedReturns();
             }
             loadStats();
             loadBrands();

@@ -108,6 +108,19 @@ app.post('/api/inventory', async (req, res) => {
     if (!name || !color) {
       return res.status(400).json({ error: '상품명과 컬러는 필수입니다.' });
     }
+    // 중복 방지: productOrderId가 있으면 이미 등록된 건인지 체크
+    if (productOrderId) {
+      const orderIdList = productOrderId.includes(',') ? productOrderId.split(',') : [productOrderId];
+      const placeholders = orderIdList.map(() => '?').join(',');
+      const dupRows = await query(
+        `SELECT product_order_id FROM sync_log WHERE type = 'inventory_update' AND product_order_id IN (${placeholders})`,
+        orderIdList.map(id => id.trim())
+      );
+      if (dupRows.length > 0) {
+        return res.status(400).json({ error: '이미 등록된 반품 건입니다.' });
+      }
+    }
+
     const brand = inputBrand || extractBrand(name);
     const qtyVal = Math.max(0, parseInt(qty) || 0);
     const trimmedName = name.trim();
@@ -592,24 +605,41 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         console.log(`[Returnable] 쿠팡: ${coupangReturns.length}건 감지`);
 
         for (const ret of coupangReturns) {
-          // 상태 매핑: RF(반품완료) → RETURN_DONE, 그 외 → COLLECTING
-          const claimStatus = ret.receiptStatus === 'RF' ? 'RETURN_DONE' : 'COLLECTING';
+          // 상태 매핑: RF(반품완료) → RETURN_DONE, CC(수거완료) → COLLECT_DONE, 그 외 → COLLECTING
+          const statusMap = { 'RF': 'RETURN_DONE', 'CC': 'COLLECT_DONE', 'UC': 'COLLECTING' };
+          const claimStatus = statusMap[ret.receiptStatus] || 'COLLECTING';
 
           for (const ri of ret.returnItems) {
             const productOrderId = `CPG_RET_${ret.receiptId}_${ri.vendorItemId}`;
             allProductOrderIds.push(productOrderId);
 
+            // vendorItemName 파싱: "ob 캐시미어 니트, 아이보리 free" → 상품명/색상/사이즈 분리
+            const parsed = parseCoupangItemName(ri.vendorItemName);
+
+            // productName: 브랜드 이니셜이 옵션에만 있으면 prepend
+            let displayName = parsed.productName;
+            if (parsed.brand && !displayName.toLowerCase().startsWith(parsed.brand)) {
+              displayName = `${parsed.brand} ${displayName}`;
+            }
+
+            // optionName: parseProductOption 호환 형식
+            const optParts = [];
+            if (parsed.color) optParts.push(`색상: ${parsed.color}`);
+            if (parsed.size) optParts.push(`사이즈: ${parsed.size}`);
+            const optionName = optParts.length > 0 ? optParts.join(' / ') : (ri.sellerProductItemName || null);
+
             items.push({
               store: 'C',
               productOrderId,
-              productName: ri.vendorItemName,
-              optionName: ri.sellerProductItemName || null,
+              productName: displayName,
+              optionName,
               qty: ri.returnQuantity || 1,
               channelProductNo: ri.vendorItemId,
               claimStatus,
               claimType: 'RETURN',
               lastChangedDate: ret.createdAt || null,
               ordererName: '',
+              _parsed: parsed,
             });
           }
         }
@@ -620,25 +650,42 @@ app.get('/api/sync/returnable-items', async (req, res) => {
       console.error(`[Returnable] 쿠팡 조회 실패:`, coupangErr.message);
     }
 
+    // === 상태 필터링: 수거완료/반품완료만 (반품요청/수거중/반품거절 제외) ===
+    const allowedStatuses = ['COLLECT_DONE', 'RETURN_DONE'];
+    const filteredItems = items.filter(item => allowedStatuses.includes(item.claimStatus));
+    console.log(`[Returnable] 상태 필터링: ${items.length}건 → ${filteredItems.length}건 (수거완료/반품완료만)`);
+
     // === processedIds 조회 (네이버 + 쿠팡 통합) ===
+    const filteredOrderIds = filteredItems.map(i => i.productOrderId);
     let processedIds = new Set();
-    if (allProductOrderIds.length > 0) {
-      const placeholders = allProductOrderIds.map(() => '?').join(',');
+    if (filteredOrderIds.length > 0) {
+      const placeholders = filteredOrderIds.map(() => '?').join(',');
       const logRows = await query(
         `SELECT product_order_id FROM sync_log WHERE type = 'inventory_update' AND product_order_id IN (${placeholders})`,
-        allProductOrderIds
+        filteredOrderIds
       );
       processedIds = new Set(logRows.map(r => r.product_order_id));
     }
-    console.log(`[Returnable] 이미 등록됨 ${processedIds.size}건`);
 
-    // alreadyAdded 플래그 설정
-    for (const item of items) {
-      item.alreadyAdded = processedIds.has(item.productOrderId);
+    // === confirmedPickup 조회 (return_confirmations) ===
+    let confirmedIds = new Set();
+    if (filteredOrderIds.length > 0) {
+      const placeholders2 = filteredOrderIds.map(() => '?').join(',');
+      const confirmRows = await query(
+        `SELECT product_order_id FROM return_confirmations WHERE product_order_id IN (${placeholders2})`,
+        filteredOrderIds
+      );
+      confirmedIds = new Set(confirmRows.map(r => r.product_order_id));
     }
 
-    console.log(`[Returnable] 최종: 전체 ${items.length}건 (등록됨 ${processedIds.size}건)`);
-    res.json(items);
+    // alreadyAdded + confirmedPickup 플래그 설정
+    for (const item of filteredItems) {
+      item.alreadyAdded = processedIds.has(item.productOrderId);
+      item.confirmedPickup = confirmedIds.has(item.productOrderId);
+    }
+
+    console.log(`[Returnable] 최종: ${filteredItems.length}건 (등록됨 ${processedIds.size}, 실수거완료 ${confirmedIds.size})`);
+    res.json(filteredItems);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1051,7 +1098,7 @@ app.post('/api/coupang/test-connection', async (req, res) => {
   }
 });
 
-// GET /api/coupang/debug-returns - 쿠팡 반품 API 원본 응답 확인
+// GET /api/coupang/debug-returns - 쿠팡 반품 조회 + 파싱 결과 확인
 app.get('/api/coupang/debug-returns', async (req, res) => {
   try {
     const coupangClient = await initCoupangClient();
@@ -1062,29 +1109,107 @@ app.get('/api/coupang/debug-returns', async (req, res) => {
     const hours = parseInt(req.query.hours) || 168;
     const now = new Date();
     const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
-    const fromStr = coupangClient.formatCoupangDate(from.toISOString());
-    const toStr = coupangClient.formatCoupangDate(now.toISOString());
 
-    const params = new URLSearchParams({
-      createdAtFrom: fromStr,
-      createdAtTo: toStr,
-      maxPerPage: '50',
-    });
-    const basePath = `/v2/providers/openapi/apis/api/v4/vendors/${coupangClient.vendorId}/returnRequests`;
-    const fullPath = `${basePath}?${params.toString()}`;
+    console.log(`[Coupang Debug] 반품 조회: ${from.toISOString()} ~ ${now.toISOString()}`);
 
-    console.log(`[Coupang Debug] 반품 조회: ${fullPath}`);
-    console.log(`[Coupang Debug] 기간: ${fromStr} ~ ${toStr}`);
+    const returns = await coupangClient.getReturnRequests(from.toISOString(), now.toISOString());
 
-    const rawResponse = await coupangClient.apiCall('GET', fullPath);
+    // 각 아이템에 파싱 결과 추가
+    const parsedReturns = returns.map(ret => ({
+      ...ret,
+      returnItems: ret.returnItems.map(ri => ({
+        ...ri,
+        _parsed: parseCoupangItemName(ri.vendorItemName),
+      })),
+    }));
+
     res.json({
-      requestPath: fullPath,
-      dateRange: { from: fromStr, to: toStr },
-      responseKeys: rawResponse ? Object.keys(rawResponse) : null,
-      rawResponse,
+      dateRange: { from: from.toISOString(), to: now.toISOString(), hours },
+      totalReturns: returns.length,
+      totalItems: returns.reduce((sum, r) => sum + r.returnItems.length, 0),
+      returns: parsedReturns,
     });
   } catch (e) {
     res.status(500).json({ error: e.message, stack: e.stack?.split('\n').slice(0, 5) });
+  }
+});
+
+// --- 실수거완료 API ---
+
+// POST /api/returns/confirm-pickup - 실수거완료 처리 (복수 건 지원)
+app.post('/api/returns/confirm-pickup', async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: '실수거완료할 항목을 선택해주세요.' });
+    }
+
+    let confirmed = 0;
+    let skipped = 0;
+    for (const item of items) {
+      if (!item.productOrderId) continue;
+      try {
+        const result = await query(
+          `INSERT IGNORE INTO return_confirmations (product_order_id, store, product_name, option_name, qty, channel_product_no)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [item.productOrderId, item.store || 'A', item.productName || null,
+           item.optionName || null, item.qty || 1, item.channelProductNo || null]
+        );
+        if (result.affectedRows > 0) confirmed++;
+        else skipped++;
+      } catch (dbErr) {
+        skipped++;
+      }
+    }
+
+    res.json({ success: true, confirmed, skipped });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/returns/confirmed - 실수거완료 리스트 (재고 추가 여부 포함)
+app.get('/api/returns/confirmed', async (req, res) => {
+  try {
+    const rows = await query('SELECT * FROM return_confirmations ORDER BY confirmed_at DESC');
+
+    // sync_log에서 inventory_update 여부 확인
+    let processedIds = new Set();
+    if (rows.length > 0) {
+      const allIds = rows.map(r => r.product_order_id);
+      const placeholders = allIds.map(() => '?').join(',');
+      const logRows = await query(
+        `SELECT product_order_id FROM sync_log WHERE type = 'inventory_update' AND product_order_id IN (${placeholders})`,
+        allIds
+      );
+      processedIds = new Set(logRows.map(r => r.product_order_id));
+    }
+
+    const items = rows.map(r => ({
+      ...r,
+      alreadyAdded: processedIds.has(r.product_order_id),
+    }));
+
+    res.json(items);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/returns/confirm-pickup/:productOrderId - 실수거완료 취소
+app.delete('/api/returns/confirm-pickup/:productOrderId', async (req, res) => {
+  try {
+    const { productOrderId } = req.params;
+    const result = await query(
+      'DELETE FROM return_confirmations WHERE product_order_id = ?',
+      [productOrderId]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: '해당 실수거완료 건을 찾을 수 없습니다.' });
+    }
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -1187,6 +1312,46 @@ function extractBrand(name) {
   const match = trimmed.match(/^([a-zA-Z]{2})\s/);
   if (match) return match[1].toLowerCase();
   return '';
+}
+
+// 쿠팡 vendorItemName 파싱: "ob 캐시미어 니트, 아이보리 free" → { productName, brand, color, size }
+// 콤마 앞 = 상품명 (브랜드 이니셜 포함), 콤마 뒤 = 옵션 (색상 + 사이즈)
+function parseCoupangItemName(vendorItemName) {
+  if (!vendorItemName) return { productName: '', brand: '', color: '', size: '' };
+
+  const commaIdx = vendorItemName.indexOf(',');
+  if (commaIdx === -1) {
+    return { productName: vendorItemName.trim(), brand: extractBrand(vendorItemName), color: '', size: '' };
+  }
+
+  const productName = vendorItemName.slice(0, commaIdx).trim();
+  const optionPart = vendorItemName.slice(commaIdx + 1).trim();
+  const tokens = optionPart.split(/\s+/).filter(t => t);
+
+  // 브랜드: 상품명에서 추출 (이미 포함되어 있음)
+  let brand = extractBrand(productName);
+
+  // 첫 토큰이 2글자 영문이면 옵션 쪽 브랜드 — 상품명에 없으면 prepend용
+  let startIdx = 0;
+  if (tokens.length > 0 && /^[a-zA-Z]{2}$/.test(tokens[0])) {
+    const optionBrand = tokens[0].toLowerCase();
+    if (!brand) {
+      brand = optionBrand;
+    }
+    startIdx = 1;
+  }
+
+  // 마지막 토큰이 사이즈 키워드면 추출
+  let size = '';
+  let endIdx = tokens.length;
+  if (tokens.length > startIdx && /^(free|xxl|xl|l|m|s|f)$/i.test(tokens[tokens.length - 1])) {
+    size = tokens[tokens.length - 1];
+    size = size.toUpperCase() === 'FREE' ? 'Free' : size.toUpperCase();
+    endIdx = tokens.length - 1;
+  }
+
+  const color = tokens.slice(startIdx, endIdx).join(' ');
+  return { productName, brand, color, size };
 }
 
 function maskSecret(str) {

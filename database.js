@@ -121,6 +121,19 @@ async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS return_confirmations (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      product_order_id VARCHAR(255) UNIQUE NOT NULL,
+      store CHAR(1) NOT NULL,
+      product_name TEXT DEFAULT NULL,
+      option_name VARCHAR(255) DEFAULT NULL,
+      qty INT DEFAULT 1,
+      channel_product_no VARCHAR(255) DEFAULT NULL,
+      confirmed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
   // 기존 UTC 저장 order_date를 KST로 마이그레이션 (1회성)
   const [migrated] = await getPool().query(
     "SELECT value FROM sync_config WHERE `key` = 'sales_tz_migrated'"
