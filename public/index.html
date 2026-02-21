@@ -1654,12 +1654,12 @@
                                 <option value="720">30일</option>
                             </select>
                             <button class="btn btn-accent btn-sm" id="returnFetchBtn" onclick="fetchRecentReturns()">불러오기</button>
-                            <button class="recent-returns-toggle" id="returnToggleBtn" onclick="event.stopPropagation();toggleRecentReturns()">
+                            <button class="recent-returns-toggle open" id="returnToggleBtn" onclick="event.stopPropagation();toggleRecentReturns()">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                             </button>
                         </div>
                     </div>
-                    <div class="recent-returns-body" id="recentReturnsBody" style="display:none">
+                    <div class="recent-returns-body" id="recentReturnsBody">
                         <div class="recent-returns-empty" id="recentReturnsEmpty">
                             "불러오기"를 클릭하여 반품/수거 내역을 조회하세요.
                         </div>
@@ -3114,7 +3114,7 @@
     }
 
     // ===== 최근 반품/수거 섹션 (메인 페이지) =====
-    let _recentReturnsOpen = false;
+    let _recentReturnsOpen = true;
 
     function toggleRecentReturns() {
         _recentReturnsOpen = !_recentReturnsOpen;
