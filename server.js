@@ -1034,7 +1034,7 @@ async function initCoupangClient() {
     const currentVersion = process.env.RENDER_GIT_COMMIT || null;
     if (currentVersion) {
       const storedVersion = await scheduler.getConfig('app_version');
-      if (storedVersion && storedVersion !== currentVersion) {
+      if (storedVersion !== currentVersion) {
         const shortHash = currentVersion.slice(0, 7);
         await scheduler.sendPushNotification('앱 업데이트', `블루파이가 새 버전으로 업데이트되었습니다. (${shortHash})`);
         console.log(`[Update] 새 버전 감지: ${storedVersion.slice(0,7)} → ${shortHash}`);
