@@ -45,7 +45,7 @@
 
         /* ===== 2. Reset & Base ===== */
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-        html { overflow-x: hidden; }
+        html { overflow-x: hidden; overscroll-behavior-y: contain; }
         body {
             font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Malgun Gothic', sans-serif;
             font-size: 14px;
@@ -3200,6 +3200,7 @@
 
     // ===== 최근 반품/수거 섹션 (메인 페이지) =====
     let _recentReturnsOpen = true;
+    let _returnsLoadedOnce = false;
 
     function toggleRecentReturns() {
         _recentReturnsOpen = !_recentReturnsOpen;
@@ -3306,6 +3307,7 @@
             }
 
             list.innerHTML = html;
+            _returnsLoadedOnce = true;
 
             // 실수거완료 리스트도 동시 갱신
             fetchConfirmedReturns();
@@ -4299,8 +4301,10 @@
         router();
         await Promise.all([loadStats(), loadBrands(), loadData()]);
         updateRefreshTime();
-        // 최근 반품/수거 자동 로드 (3일)
-        fetchRecentReturns();
+        // 최초 진입 시에만 반품/수거 자동 로드 (이후 불러오기 버튼으로만 갱신)
+        if (!_returnsLoadedOnce) {
+            fetchRecentReturns();
+        }
     }
     init();
     </script>
