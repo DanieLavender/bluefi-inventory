@@ -456,6 +456,9 @@
             border-radius: var(--radius-sm);
             white-space: nowrap;
         }
+        .store-badge { display:inline-block; font-size:9px; padding:1px 4px; border-radius:3px; color:white; margin-right:4px; font-weight:700; vertical-align:middle; }
+        .store-coupang { background:#E44D2E; }
+        .store-naver { background:#03C75A; }
         @media (max-width: 768px) {
             .recent-returns-header { padding: 10px 12px; }
             .return-item-row {
@@ -2037,7 +2040,7 @@
                     <option value="720">30일</option>
                 </select>
                 <button class="naver-fetch-btn" id="naverFetchBtn" onclick="fetchNaverReturns()" style="margin-bottom:0;flex:1;">
-                    <span>&#128230;</span> 네이버 반품/수거 불러오기
+                    <span>&#128230;</span> 반품/수거 불러오기
                 </button>
             </div>
             <div class="naver-return-list" id="naverReturnList"></div>
@@ -3074,6 +3077,11 @@
         const optionParts = [color, size].filter(Boolean);
         const optionDisplay = optionParts.join(' / ');
 
+        // 스토어 배지
+        const storeBadge = item.store === 'C'
+            ? '<span class="store-badge store-coupang">쿠팡</span>'
+            : '<span class="store-badge store-naver">네이버</span>';
+
         // 브랜드 추출
         const { brand, name } = extractBrandFromName(fullName);
         const brandBadge = brand
@@ -3081,7 +3089,7 @@
             : '';
 
         const infoLine = [dateStr, buyer, shortOrderId].filter(Boolean).join(' · ');
-        const nameHtml = '<span style="font-weight:600;">' + brandBadge + name + '</span>';
+        const nameHtml = '<span style="font-weight:600;">' + storeBadge + brandBadge + name + '</span>';
         const optionHtml = optionDisplay ? '<span style="font-size:12px;color:var(--accent);font-weight:600;">&#9679; ' + optionDisplay + '</span>' : '';
         const infoHtml = '<span style="font-size:10px;color:var(--text-muted);">' + infoLine + '</span>';
 
@@ -3201,6 +3209,9 @@
                     const { brand } = extractBrandFromName(item.productName || '');
                     const brandClass = brand ? `brand-${brand}` : 'brand-default';
                     const brandBadge = brand ? `<span class="brand-badge ${brandClass}" style="font-size:10px;padding:1px 5px;">${brand}</span>` : '';
+                    const storeBadge = item.store === 'C'
+                        ? '<span class="store-badge store-coupang">쿠팡</span>'
+                        : '<span class="store-badge store-naver">네이버</span>';
                     const { color, size } = parseProductOption(item.optionName);
                     const colorText = color || '(옵션없음)';
                     const sizeText = size ? ` · ${size}` : '';
@@ -3216,7 +3227,7 @@
 
                     html += `<div class="${rowClass}" data-order-id="${item.productOrderId}">
                         <div class="return-item-info">
-                            ${brandBadge}
+                            ${storeBadge}${brandBadge}
                             <span class="return-item-name">${escapeHtml(item.productName || '')}</span>
                             <span class="return-item-option">${escapeHtml(colorText)}${escapeHtml(sizeText)}</span>
                             <span class="return-item-qty">${item.qty || 1}개</span>

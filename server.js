@@ -120,16 +120,18 @@ app.post('/api/inventory', async (req, res) => {
     );
     const rows = await query('SELECT * FROM inventory WHERE id = ?', [result.insertId]);
 
-    // 네이버 반품에서 불러온 건이면 sync_log에 기록 → 자동 동기화 중복 방지
+    // 반품에서 불러온 건이면 sync_log에 기록 → 자동 동기화 중복 방지
     // 합산 선택 시 콤마 구분된 여러 productOrderId → 각각 기록
     if (productOrderId) {
       try {
         const orderIdList = productOrderId.includes(',') ? productOrderId.split(',') : [productOrderId];
         for (const oid of orderIdList) {
+          const storeFrom = oid.trim().startsWith('CPG_') ? 'C' : 'A';
+          const storeLabel = storeFrom === 'C' ? '쿠팡' : '네이버';
           await query(
             `INSERT INTO sync_log (run_id, type, store_from, store_to, product_order_id, channel_product_no, product_name, product_option, qty, status, message)
-             VALUES ('manual', 'inventory_update', 'A', NULL, ?, ?, ?, ?, ?, 'success', '수동 등록 (네이버 불러오기)')`,
-            [oid.trim(), channelProductNo || null, trimmedName, trimmedColor, qtyVal]
+             VALUES ('manual', 'inventory_update', ?, NULL, ?, ?, ?, ?, ?, 'success', ?)`,
+            [storeFrom, oid.trim(), channelProductNo || null, trimmedName, trimmedColor, qtyVal, `수동 등록 (${storeLabel} 불러오기)`]
           );
         }
       } catch (logErr) {
@@ -518,7 +520,7 @@ app.post('/api/sales/fetch', async (req, res) => {
 
 // --- Sync API Routes ---
 
-// GET /api/sync/returnable-items - 네이버 반품/수거 완료 건 목록 (이미 등록된 건도 표시)
+// GET /api/sync/returnable-items - 네이버+쿠팡 반품/수거 완료 건 목록 (이미 등록된 건도 표시)
 app.get('/api/sync/returnable-items', async (req, res) => {
   try {
     await initSyncClients();
@@ -526,80 +528,110 @@ app.get('/api/sync/returnable-items', async (req, res) => {
     const now = new Date();
     const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
 
-    // 1. 반품완료 + 수거완료 건 조회
+    // === 네이버 반품 조회 ===
     const returnableOrders = await scheduler.storeA.getReturnableOrders(from.toISOString(), now.toISOString());
-    console.log(`[Returnable] 1단계: ${returnableOrders.length}건 감지 (${hours}시간)`);
+    console.log(`[Returnable] 네이버: ${returnableOrders.length}건 감지 (${hours}시간)`);
 
-    if (returnableOrders.length === 0) {
-      return res.json([]);
+    const items = [];
+    const allProductOrderIds = [];
+
+    if (returnableOrders.length > 0) {
+      const orderIds = returnableOrders.map(o => o.productOrderId);
+      allProductOrderIds.push(...orderIds);
+      const statusInfoMap = {};
+      for (const o of returnableOrders) {
+        statusInfoMap[o.productOrderId] = {
+          claimStatus: o.claimStatus,
+          lastChangedDate: o.lastChangedDate,
+        };
+      }
+
+      const details = await scheduler.storeA.getProductOrderDetail(orderIds);
+      console.log(`[Returnable] 네이버 상세: ${details.length}건 조회`);
+
+      const debug = req.query.debug === '1';
+      for (const detail of details) {
+        const po = detail.productOrder || detail;
+        const order = detail.order || {};
+        const productOrderId = po.productOrderId || '';
+        const info = statusInfoMap[productOrderId] || {};
+        const claimStatus = po.claimStatus || info.claimStatus || '';
+        const productOption = po.productOption || po.optionName || null;
+
+        const item = {
+          store: 'A',
+          productOrderId,
+          productName: po.productName || '',
+          optionName: productOption,
+          qty: po.quantity || 1,
+          channelProductNo: String(po.channelProductNo || po.productId || ''),
+          claimStatus,
+          claimType: po.claimType || '',
+          lastChangedDate: info.lastChangedDate || null,
+          ordererName: order.ordererName || po.ordererName || '',
+        };
+
+        if (items.length === 0) {
+          console.log(`[Returnable] 첫 항목 po 키:`, Object.keys(po).join(', '));
+        }
+        console.log(`[Returnable] ${po.productName?.slice(0,30)} / opt=${po.optionName} / claimStatus=${claimStatus}`);
+
+        if (debug) {
+          item._debug = { po: Object.keys(po), order: Object.keys(order), poFull: po };
+        }
+        items.push(item);
+      }
     }
 
-    // 2. 상세 조회
-    const orderIds = returnableOrders.map(o => o.productOrderId);
-    const statusInfoMap = {};
-    for (const o of returnableOrders) {
-      statusInfoMap[o.productOrderId] = {
-        claimStatus: o.claimStatus,
-        lastChangedDate: o.lastChangedDate,
-      };
+    // === 쿠팡 반품 조회 ===
+    try {
+      const coupangClient = await initCoupangClient();
+      if (coupangClient) {
+        const coupangReturns = await coupangClient.getReturnRequests(from.toISOString(), now.toISOString());
+        console.log(`[Returnable] 쿠팡: ${coupangReturns.length}건 감지`);
+
+        for (const ret of coupangReturns) {
+          // 상태 매핑: RF(반품완료) → RETURN_DONE, 그 외 → COLLECTING
+          const claimStatus = ret.receiptStatus === 'RF' ? 'RETURN_DONE' : 'COLLECTING';
+
+          for (const ri of ret.returnItems) {
+            const productOrderId = `CPG_RET_${ret.receiptId}_${ri.vendorItemId}`;
+            allProductOrderIds.push(productOrderId);
+
+            items.push({
+              store: 'C',
+              productOrderId,
+              productName: ri.vendorItemName,
+              optionName: ri.sellerProductItemName || null,
+              qty: ri.returnQuantity || 1,
+              channelProductNo: ri.vendorItemId,
+              claimStatus,
+              claimType: 'RETURN',
+              lastChangedDate: ret.createdAt || null,
+              ordererName: '',
+            });
+          }
+        }
+      }
+    } catch (coupangErr) {
+      console.log(`[Returnable] 쿠팡 조회 실패 (무시):`, coupangErr.message);
     }
 
-    const details = await scheduler.storeA.getProductOrderDetail(orderIds);
-    console.log(`[Returnable] 2단계: 상세 ${details.length}건 조회`);
-
-    // 3. sync_log에서 이미 inventory_update 처리된 productOrderId 확인 (제외하지 않고 표시용)
+    // === processedIds 조회 (네이버 + 쿠팡 통합) ===
     let processedIds = new Set();
-    if (orderIds.length > 0) {
-      const placeholders = orderIds.map(() => '?').join(',');
+    if (allProductOrderIds.length > 0) {
+      const placeholders = allProductOrderIds.map(() => '?').join(',');
       const logRows = await query(
         `SELECT product_order_id FROM sync_log WHERE type = 'inventory_update' AND product_order_id IN (${placeholders})`,
-        orderIds
+        allProductOrderIds
       );
       processedIds = new Set(logRows.map(r => r.product_order_id));
     }
-    console.log(`[Returnable] 3단계: 이미 등록됨 ${processedIds.size}건`);
+    console.log(`[Returnable] 이미 등록됨 ${processedIds.size}건`);
 
-    // 4. 전체 목록 반환 (이미 등록된 건은 alreadyAdded: true)
-    const items = [];
-    const debug = req.query.debug === '1';
-    for (const detail of details) {
-      const po = detail.productOrder || detail;
-      const order = detail.order || {};
-      const productOrderId = po.productOrderId || '';
-      const info = statusInfoMap[productOrderId] || {};
-
-      // claimStatus: 상세 조회의 현재 상태 우선 (last-changed-statuses는 과거 시점 상태)
-      const claimStatus = po.claimStatus || info.claimStatus || '';
-
-      // productOption: "색상: 연핑크 / 사이즈: Free" 형태
-      const productOption = po.productOption || po.optionName || null;
-
-      const item = {
-        productOrderId,
-        productName: po.productName || '',
-        optionName: productOption,
-        qty: po.quantity || 1,
-        channelProductNo: String(po.channelProductNo || po.productId || ''),
-        claimStatus,
-        claimType: po.claimType || '',
-        lastChangedDate: info.lastChangedDate || null,
-        ordererName: order.ordererName || po.ordererName || '',
-        alreadyAdded: processedIds.has(productOrderId),
-      };
-
-      // 첫 번째 항목: 전체 필드 구조 로깅
-      if (items.length === 0) {
-        console.log(`[Returnable] 첫 항목 po 키:`, Object.keys(po).join(', '));
-        console.log(`[Returnable] 첫 항목 order 키:`, Object.keys(order).join(', '));
-        console.log(`[Returnable] 첫 항목 po 전체:`, JSON.stringify(po).slice(0, 2000));
-      }
-      console.log(`[Returnable] ${po.productName?.slice(0,30)} / opt=${po.optionName} / claimStatus(detail)=${po.claimStatus} claimStatus(change)=${info.claimStatus}`);
-
-      if (debug) {
-        item._debug = { po: Object.keys(po), order: Object.keys(order), poFull: po };
-      }
-
-      items.push(item);
+    // alreadyAdded 플래그 설정
+    for (const item of items) {
+      item.alreadyAdded = processedIds.has(item.productOrderId);
     }
 
     console.log(`[Returnable] 최종: 전체 ${items.length}건 (등록됨 ${processedIds.size}건)`);
