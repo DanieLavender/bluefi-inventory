@@ -406,12 +406,12 @@ app.post('/api/sales/fetch', async (req, res) => {
                   const channelProductNo = String(po.channelProductNo || po.productId || '');
 
                   try {
-                    await query(
+                    const insertResult = await query(
                       `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                       [key, productOrderId, orderDate, productName, optionName, qty, unitPrice, totalAmount, status, channelProductNo]
                     );
-                    storeInserted++;
+                    if (insertResult.affectedRows > 0) storeInserted++;
                   } catch (dbErr) { }
                 }
 
@@ -462,13 +462,13 @@ app.post('/api/sales/fetch', async (req, res) => {
             storeFound += items.length;
             for (const item of items) {
               try {
-                await query(
+                const insertResult = await query(
                   `INSERT IGNORE INTO sales_orders (store, product_order_id, order_date, product_name, option_name, qty, unit_price, total_amount, product_order_status, channel_product_no)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   ['C', item.productOrderId, item.orderDate, item.productName, item.optionName,
                    item.qty, item.unitPrice, item.totalAmount, item.status, item.channelProductNo]
                 );
-                storeInserted++;
+                if (insertResult.affectedRows > 0) storeInserted++;
               } catch (dbErr) { }
             }
           } catch (chunkErr) {
@@ -489,6 +489,15 @@ app.post('/api/sales/fetch', async (req, res) => {
       } catch (e) {
         errors.push(`Coupang: ${e.message}`);
         console.error('[Sales] Coupang 오류:', e.message);
+      }
+    }
+
+    // 신규 매출 푸시 알림
+    if (totalInserted > 0) {
+      try {
+        await scheduler.sendPushNotification('신규 주문', `새 주문 ${totalInserted}건이 들어왔습니다`);
+      } catch (pushErr) {
+        console.log('[Sales] 푸시 알림 오류:', pushErr.message);
       }
     }
 
