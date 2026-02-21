@@ -456,6 +456,9 @@
             border: 1px solid #BBF7D0;
             border-radius: var(--radius-sm);
             white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
         .store-badge { display:inline-block; font-size:9px; padding:1px 4px; border-radius:3px; color:white; margin-right:4px; font-weight:700; vertical-align:middle; }
         .store-coupang { background:#E44D2E; }
@@ -3282,7 +3285,7 @@
 
                     if (added) {
                         rowClass += ' return-item-added';
-                        btnHtml = '<span class="return-added-label">추가완료</span>';
+                        btnHtml = '<span class="return-added-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>추가완료</span>';
                     } else if (confirmed) {
                         btnHtml = `<span class="return-confirmed-label" onclick="cancelConfirmPickup('${item.productOrderId}', this)" title="클릭하여 취소">실수거완료됨</span>`;
                     } else if (canConfirm) {
@@ -3462,7 +3465,7 @@
                 const added = item.alreadyAdded;
                 const rowClass = added ? 'return-item-row return-item-added' : 'return-item-row';
                 const btnHtml = added
-                    ? '<span class="return-added-label">추가완료</span>'
+                    ? '<span class="return-added-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>추가완료</span>'
                     : `<button class="return-add-btn" onclick="addFromConfirmedReturn('${item.product_order_id}', this)">+ 추가</button>`;
 
                 html += `<div class="${rowClass}" data-order-id="${item.product_order_id}">
@@ -3647,14 +3650,14 @@
                         if (btn) {
                             const label = document.createElement('span');
                             label.className = 'return-added-label';
-                            label.textContent = '추가완료';
+                            label.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>추가완료';
                             btn.replaceWith(label);
                         }
                         // 실수거완료됨 라벨도 추가완료로 변경
                         const confirmLabel = row.querySelector('.return-confirmed-label');
                         if (confirmLabel) {
                             confirmLabel.className = 'return-added-label';
-                            confirmLabel.textContent = '추가완료';
+                            confirmLabel.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>추가완료';
                         }
                     }
                 }
