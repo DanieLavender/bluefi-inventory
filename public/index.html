@@ -442,6 +442,20 @@
             border-color: #BBF7D0;
             cursor: default;
         }
+        .return-item-added {
+            opacity: 0.5;
+        }
+        .return-added-label {
+            flex-shrink: 0;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #16A34A;
+            background: #F0FDF4;
+            border: 1px solid #BBF7D0;
+            border-radius: var(--radius-sm);
+            white-space: nowrap;
+        }
         @media (max-width: 768px) {
             .recent-returns-header { padding: 10px 12px; }
             .return-item-row {
@@ -3189,7 +3203,13 @@
 
                     const buyerName = item.ordererName ? `<span class="return-item-buyer">${escapeHtml(item.ordererName)}</span>` : '';
 
-                    html += `<div class="return-item-row" data-order-id="${item.productOrderId}">
+                    const added = item.alreadyAdded;
+                    const rowClass = added ? 'return-item-row return-item-added' : 'return-item-row';
+                    const btnHtml = added
+                        ? `<span class="return-added-label">추가완료</span>`
+                        : `<button class="return-add-btn" onclick="addFromRecentReturn('${item.productOrderId}', this)">+ 추가</button>`;
+
+                    html += `<div class="${rowClass}" data-order-id="${item.productOrderId}">
                         <div class="return-item-info">
                             ${brandBadge}
                             <span class="return-item-name">${escapeHtml(item.productName || '')}</span>
@@ -3198,7 +3218,7 @@
                             ${buyerName}
                             <span class="return-item-date">${dateStr}</span>
                         </div>
-                        <button class="return-add-btn" onclick="addFromRecentReturn('${item.productOrderId}', this)">+ 추가</button>
+                        ${btnHtml}
                     </div>`;
                 }
             }
