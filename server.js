@@ -516,6 +516,21 @@ app.post('/api/sales/fetch', async (req, res) => {
       }
     }
 
+    // 매출 수집 결과를 sync_log에 기록
+    const salesRunId = 'sales-manual-' + Date.now();
+    for (const d of storeResults) {
+      if (d.inserted > 0) {
+        try {
+          await query(
+            `INSERT INTO sync_log (run_id, type, store_from, product_name, qty, status, message) VALUES (?, 'sales_collect', ?, ?, ?, 'success', ?)`,
+            [salesRunId, d.store === '쿠팡' ? 'C' : d.store.includes('A') ? 'A' : 'B', `${d.store} 매출 수집`, d.inserted, `${d.store} 신규 주문 ${d.inserted}건 수집`]
+          );
+        } catch (logErr) {
+          console.log('[Sales] sync_log 기록 실패:', logErr.message);
+        }
+      }
+    }
+
     const hasErrors = errors.length > 0;
     const details = storeResults || [];
     const detailMsg = details.map(d => `${d.store}: ${d.inserted}건`).join(', ');

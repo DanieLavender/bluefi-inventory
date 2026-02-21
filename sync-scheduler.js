@@ -131,7 +131,7 @@ class SyncScheduler {
 
         // 반품 없어도 매출 수집은 항상 실행
         try {
-          await this.fetchSalesData();
+          await this.fetchSalesData(runId);
         } catch (salesErr) {
           console.error('[Sync] 매출 수집 오류:', salesErr.message);
         }
@@ -182,7 +182,7 @@ class SyncScheduler {
 
       // 매출 데이터 자동 수집
       try {
-        await this.fetchSalesData();
+        await this.fetchSalesData(runId);
       } catch (salesErr) {
         console.error('[Sync] 매출 수집 오류:', salesErr.message);
       }
@@ -656,8 +656,9 @@ class SyncScheduler {
 
   // === Sales data fetch ===
 
-  async fetchSalesData() {
+  async fetchSalesData(runId = null) {
     if (!this.hasClients()) return;
+    const logRunId = runId || 'sales-' + Date.now();
     let totalNewOrders = 0;
     let totalNewAmount = 0;
 
@@ -731,9 +732,15 @@ class SyncScheduler {
         if (inserted > 0) {
           totalNewOrders += inserted;
           console.log(`[Sales] Store ${key} 자동 수집: ${inserted}건`);
+          const storeLabel = key === 'A' ? '네이버A' : '네이버B';
+          await this.logSync(logRunId, 'sales_collect', key, null, null, null,
+            `${storeLabel} 매출 수집`, null, inserted, 'success', `${storeLabel} 스토어 신규 주문 ${inserted}건 수집`);
         }
       } catch (e) {
         console.error(`[Sales] Store ${key} 수집 오류:`, e.message);
+        const storeLabel = key === 'A' ? '네이버A' : '네이버B';
+        await this.logSync(logRunId, 'sales_collect', key, null, null, null,
+          `${storeLabel} 매출 수집`, null, 0, 'fail', e.message).catch(() => {});
       }
     }
 
@@ -783,10 +790,14 @@ class SyncScheduler {
         if (inserted > 0) {
           totalNewOrders += inserted;
           console.log(`[Sales] Coupang 자동 수집: ${inserted}건`);
+          await this.logSync(logRunId, 'sales_collect', 'C', null, null, null,
+            '쿠팡 매출 수집', null, inserted, 'success', `쿠팡 신규 주문 ${inserted}건 수집`);
         }
       }
     } catch (e) {
       console.error('[Sales] Coupang 수집 오류:', e.message);
+      await this.logSync(logRunId, 'sales_collect', 'C', null, null, null,
+        '쿠팡 매출 수집', null, 0, 'fail', e.message).catch(() => {});
     }
 
     // 신규 매출 푸시 알림

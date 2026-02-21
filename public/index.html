@@ -1236,6 +1236,7 @@
         .type-in { background: var(--success-light); color: var(--success); }
         .type-out { background: #FEF2F2; color: var(--danger); }
         .type-edit { background: var(--accent-light); color: var(--accent); }
+        .type-sales { background: #EDE9FE; color: #7C3AED; }
         .brand-card-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1891,6 +1892,8 @@
                                 <option value="return_detect">반품 감지</option>
                                 <option value="qty_increase">수량 증가</option>
                                 <option value="product_create">상품 등록</option>
+                                <option value="inventory_update">재고 반영</option>
+                                <option value="sales_collect">매출 수집</option>
                                 <option value="error">오류</option>
                             </select>
                             <select class="filter-select" id="logStatusFilter" onchange="loadSyncLogs()">
@@ -4092,12 +4095,16 @@
                 'return_detect': '반품 감지',
                 'qty_increase': '수량 증가',
                 'product_create': '상품 등록',
+                'inventory_update': '재고 반영',
+                'sales_collect': '매출 수집',
                 'error': '오류',
             };
             const typeClasses = {
                 'return_detect': 'type-return',
                 'qty_increase': 'type-increase',
                 'product_create': 'type-create',
+                'inventory_update': 'type-edit',
+                'sales_collect': 'type-sales',
                 'error': 'type-error',
             };
             const statusLabels = {
