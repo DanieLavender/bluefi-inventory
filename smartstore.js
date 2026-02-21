@@ -382,8 +382,15 @@ class NaverCommerceClient {
    * @param {number} stockQty - 초기 재고 수량
    * @returns {Object} B 스토어 상품 등록 요청 body
    */
-  static buildProductCopyData(sourceProduct, stockQty = 1) {
+  static buildProductCopyData(sourceProduct, stockQty = 1, namePrefix = '(오늘출발)') {
     const origin = sourceProduct.originProduct || sourceProduct;
+    const baseName = origin.name || '';
+    const channelName = sourceProduct.channelProductName || baseName;
+    // 접두어가 이미 있으면 중복 방지
+    const prefixedName = namePrefix && !baseName.startsWith(namePrefix)
+      ? `${namePrefix} ${baseName}` : baseName;
+    const prefixedChannelName = namePrefix && !channelName.startsWith(namePrefix)
+      ? `${namePrefix} ${channelName}` : channelName;
 
     // 기본 상품 정보 복사
     const newProduct = {
@@ -391,13 +398,13 @@ class NaverCommerceClient {
         statusType: 'SALE',
         saleType: origin.saleType || 'NEW',
         leafCategoryId: origin.leafCategoryId || '',
-        name: origin.name || '',
+        name: prefixedName,
         detailContent: origin.detailContent || '',
         stockQuantity: stockQty,
         detailAttribute: {},
       },
       smartstoreChannelProduct: {
-        channelProductName: sourceProduct.channelProductName || origin.name || '',
+        channelProductName: prefixedChannelName,
         storeKeepExclusiveProduct: false,
         channelProductDisplayStatusType: 'ON',
         naverShoppingRegistration: true,
