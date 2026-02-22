@@ -148,6 +148,19 @@ async function initDb() {
     console.log('[DB] sales_orders order_date UTC→KST 마이그레이션 완료');
   }
 
+  // 네이버 매출 UTC 문제 수정: 삭제 후 재수집 유도 (1회성)
+  const [naverTzFixed] = await getPool().query(
+    "SELECT value FROM sync_config WHERE `key` = 'naver_sales_tz_fixed'"
+  ).catch(() => [[]]);
+  if (!naverTzFixed || naverTzFixed.length === 0 || naverTzFixed[0]?.value !== 'true') {
+    await query("DELETE FROM sales_orders WHERE store IN ('A', 'B')").catch(() => {});
+    await query("UPDATE sync_config SET value = '' WHERE `key` IN ('sales_last_fetch_a', 'sales_last_fetch_b')").catch(() => {});
+    await query(
+      "INSERT INTO sync_config (`key`, value) VALUES ('naver_sales_tz_fixed', 'true') ON DUPLICATE KEY UPDATE value = 'true'"
+    ).catch(() => {});
+    console.log('[DB] 네이버 매출 데이터 삭제 (UTC→KST 재수집 유도)');
+  }
+
   // 쿠팡 금액 0 레코드 삭제 마이그레이션 (1회성 - 가격 필드 수정 전 데이터)
   const [cpgMigrated] = await getPool().query(
     "SELECT value FROM sync_config WHERE `key` = 'cpg_price_fix_migrated'"
