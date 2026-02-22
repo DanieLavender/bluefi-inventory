@@ -2934,8 +2934,15 @@
         btn.classList.add('spinning');
         btn.disabled = true;
         try {
-            await Promise.all([loadStats(), loadBrands(), loadData()]);
-            updateRefreshTime();
+            const page = location.hash.slice(1) || 'inventory';
+            if (page === 'sales') {
+                await loadSalesPage();
+            } else if (page === 'log') {
+                await loadSyncLogs();
+            } else {
+                await Promise.all([loadStats(), loadBrands(), loadData()]);
+                updateRefreshTime();
+            }
             showToast('새로고침 완료', 'success');
         } catch (e) {
             showToast('새로고침 실패', 'error');
