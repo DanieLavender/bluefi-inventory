@@ -34,7 +34,8 @@ class ZigzagClient {
 
   async apiCall(queryStr, variables = {}, retryCount = 0) {
     const body = JSON.stringify({ query: queryStr, variables });
-    const authorization = this.buildAuthorization(body);
+    // 서명 대상은 GraphQL 쿼리 문자열 (JSON body가 아님)
+    const authorization = this.buildAuthorization(queryStr);
 
     const res = await fetch(ZIGZAG_API_URL, {
       method: 'POST',
