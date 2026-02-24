@@ -168,10 +168,9 @@ class CoupangClient {
     const allReturns = [];
     const from = this.formatCoupangDate(fromDate);
     const to = this.formatCoupangDate(toDate);
-    // 쿠팡 반품 상태별 조회 (status 필수)
-    // UC=반품접수, CC=수거완료 (허용값 확인 후 입고완료 코드 추가 예정)
-    // 허용값 탐색: 유효하지 않은 코드를 보내서 전체 허용 목록을 로그로 확인
-    const statuses = ['UC', 'CC', 'XX'];
+    // 쿠팡 반품 상태별 조회 (status 필수, 허용값: RU/CC/PR/UC)
+    // RU=출고중지요청, UC=반품접수, CC=수거완료, PR=입고완료(VENDOR_WAREHOUSE_CONFIRM)
+    const statuses = ['UC', 'CC', 'PR'];
 
     for (const status of statuses) {
       let nextToken = null;
