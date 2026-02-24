@@ -615,8 +615,10 @@ app.get('/api/sync/returnable-items', async (req, res) => {
     try {
       const coupangClient = await initCoupangClient();
       if (coupangClient) {
-        console.log(`[Returnable] 쿠팡 클라이언트 초기화 성공, 반품 조회 시작...`);
-        const coupangReturns = await coupangClient.getReturnRequests(from.toISOString(), now.toISOString());
+        // 쿠팡은 접수일(createdAt) 기준 조회 → 입고완료까지 시간 걸리므로 기간 2배로 확장
+        const coupangFrom = new Date(now.getTime() - hours * 2 * 60 * 60 * 1000);
+        console.log(`[Returnable] 쿠팡 클라이언트 초기화 성공, 반품 조회 시작 (${Math.round(hours*2/24)}일)...`);
+        const coupangReturns = await coupangClient.getReturnRequests(coupangFrom.toISOString(), now.toISOString());
         console.log(`[Returnable] 쿠팡: ${coupangReturns.length}건 감지`);
         // 상태별 분포 로깅
         const cDist = {};
