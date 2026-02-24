@@ -761,10 +761,12 @@ app.get('/api/sync/returnable-items', async (req, res) => {
             'RETURNED': 'COLLECT_DONE',
           };
           const claimStatus = statusMap[ret.receiptStatus] || 'COLLECTING';
+          console.log(`[Returnable] 지그재그 개별: receiptId=${ret.receiptId} receiptStatus=${ret.receiptStatus} → claimStatus=${claimStatus} buyer=${ret.buyerName}`);
 
           for (const ri of ret.returnItems) {
             const productOrderId = `ZZG_RET_${ret.receiptId}_${ri.vendorItemId}`;
             allProductOrderIds.push(productOrderId);
+            console.log(`[Returnable] 지그재그 아이템: ${ri.vendorItemName?.slice(0,30)} opt=${ri.sellerProductItemName} qty=${ri.returnQuantity}`);
 
             // 옵션 파싱
             const optionName = ri.sellerProductItemName || null;

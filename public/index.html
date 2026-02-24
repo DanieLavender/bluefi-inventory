@@ -3379,6 +3379,8 @@
                     const brandBadge = brand ? `<span class="brand-badge ${brandClass}" style="font-size:10px;padding:1px 5px;">${brand}</span>` : '';
                     const storeBadge = item.store === 'C'
                         ? '<span class="store-badge store-coupang">쿠팡</span>'
+                        : item.store === 'D'
+                        ? '<span class="store-badge store-zigzag">지그재그</span>'
                         : '<span class="store-badge store-naver">네이버</span>';
                     const { color, size } = parseProductOption(item.optionName);
                     const colorText = color || '(옵션없음)';
@@ -3622,6 +3624,8 @@
                 const brandBadge = brand ? `<span class="brand-badge ${brandClass}" style="font-size:10px;padding:1px 5px;">${brand}</span>` : '';
                 const storeBadge = item.store === 'C'
                     ? '<span class="store-badge store-coupang">쿠팡</span>'
+                    : item.store === 'D'
+                    ? '<span class="store-badge store-zigzag">지그재그</span>'
                     : '<span class="store-badge store-naver">네이버</span>';
                 const { color, size } = parseProductOption(item.option_name);
                 const colorText = color || '(옵션없음)';
