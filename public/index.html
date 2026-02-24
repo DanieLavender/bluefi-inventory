@@ -1611,22 +1611,43 @@
             .brand-card-item { padding: 12px; }
         }
 
-        /* 모바일 가로 회전 시 강제 세로 표시 */
+        /* 가로 회전 차단 오버레이 */
+        .landscape-block {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 999999;
+            background: #111;
+            color: #fff;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            font-size: 16px;
+        }
+        .landscape-block svg {
+            width: 48px;
+            height: 48px;
+            animation: rotate-phone 1.5s ease-in-out infinite;
+        }
+        @keyframes rotate-phone {
+            0%, 100% { transform: rotate(90deg); }
+            50% { transform: rotate(0deg); }
+        }
         @media screen and (orientation: landscape) and (max-height: 600px) {
-            html {
-                transform: rotate(-90deg);
-                transform-origin: left top;
-                width: 100vh;
-                height: 100vw;
-                overflow-x: hidden;
-                position: absolute;
-                top: 100%;
-                left: 0;
-            }
+            .landscape-block { display: flex; }
         }
     </style>
 </head>
 <body>
+    <!-- 가로 회전 차단 오버레이 -->
+    <div class="landscape-block">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6" y="2" width="12" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/>
+        </svg>
+        <span>화면을 세로로 돌려주세요</span>
+    </div>
+
     <!-- ===== Login Page ===== -->
     <div class="login-page" id="loginPage" style="display:none">
         <div class="login-card">
