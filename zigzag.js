@@ -245,19 +245,57 @@ class ZigzagClient {
     return unique;
   }
 
-  // === 연결 테스트 ===
+  // === 연결 테스트 (여러 URL + 헤더 조합 시도) ===
 
   async testConnection() {
-    try {
-      const data = await this.apiCall('query { shop { shop_id shop_name } }');
-      const shop = data && data.shop;
-      if (shop) {
-        return { success: true, message: `${this.storeName} 연결 성공 (${shop.shop_name || shop.shop_id})` };
+    const urls = [
+      'https://api.zigzag.kr/graphql',
+      'https://api.kakaostyle.com/graphql',
+      'https://partners.kakaostyle.com/graphql',
+      'https://openapi.zigzag.kr/graphql',
+      'https://zigzag.kr/_openapi/graphql',
+    ];
+    const headerSets = [
+      { 'Content-Type': 'application/json', 'zigzag-access-key': this.accessKey, 'zigzag-secret-key': this.secretKey },
+      { 'Content-Type': 'application/json', 'x-zigzag-access-key': this.accessKey, 'x-zigzag-secret-key': this.secretKey },
+      { 'Content-Type': 'application/json', 'access-key': this.accessKey, 'secret-key': this.secretKey },
+    ];
+
+    const testQuery = JSON.stringify({ query: 'query { shop { shop_id shop_name } }' });
+    const errors = [];
+
+    for (const url of urls) {
+      for (const headers of headerSets) {
+        try {
+          const res = await fetch(url, { method: 'POST', headers, body: testQuery });
+          const status = res.status;
+          if (status === 404 || status === 403) continue; // 해당 URL/헤더 조합 아님
+
+          const text = await res.text();
+          let json;
+          try { json = JSON.parse(text); } catch { continue; }
+
+          if (json.data && json.data.shop) {
+            // 성공! URL + 헤더 저장
+            this.graphqlUrl = url;
+            const hdrKeys = Object.keys(headers).filter(k => k !== 'Content-Type');
+            const shop = json.data.shop;
+            return { success: true, message: `${this.storeName} 연결 성공 (${shop.shop_name || shop.shop_id}) [${url}]`, url, headerKeys: hdrKeys };
+          }
+          if (json.data) {
+            this.graphqlUrl = url;
+            return { success: true, message: `${this.storeName} 연결 성공 [${url}]`, url };
+          }
+          if (json.errors) {
+            // GraphQL 응답은 오지만 에러 → URL은 맞음, 쿼리/인증 문제
+            errors.push(`${url} (${Object.keys(headers).filter(k=>k!=='Content-Type').join(',')}): ${json.errors[0]?.message || JSON.stringify(json.errors).slice(0,100)}`);
+          }
+        } catch (e) {
+          errors.push(`${url}: ${e.message.slice(0, 80)}`);
+        }
       }
-      return { success: true, message: `${this.storeName} 연결 성공` };
-    } catch (e) {
-      return { success: false, message: e.message };
     }
+    return { success: false, message: `모든 URL/헤더 조합 실패:\n${errors.join('\n')}` };
   }
 }
 
