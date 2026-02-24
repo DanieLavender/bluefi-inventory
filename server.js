@@ -649,11 +649,32 @@ app.get('/api/sync/returnable-items', async (req, res) => {
             // vendorItemName 파싱: "ob 캐시미어 니트, 아이보리 free" → 상품명/색상/사이즈 분리
             const parsed = parseCoupangItemName(ri.vendorItemName);
 
-            // optionName: parseProductOption 호환 형식
-            const optParts = [];
-            if (parsed.color) optParts.push(`색상: ${parsed.color}`);
-            if (parsed.size) optParts.push(`사이즈: ${parsed.size}`);
-            const optionName = optParts.length > 0 ? optParts.join(' / ') : (ri.sellerProductItemName || null);
+            // optionName: sellerProductItemName 우선 사용 (구체적 옵션)
+            // sellerProductItemName = 해당 vendorItem의 실제 옵션 (예: "아이보리 free")
+            const spi = (ri.sellerProductItemName || '').trim();
+            let optionName;
+            if (spi) {
+              // sellerProductItemName에서 색상/사이즈 분리
+              const spiTokens = spi.split(/[\s/]+/).filter(t => t);
+              const sizeRe = /^(free|xxl|xl|l|m|s|f)$/i;
+              // 브랜드 이니셜(2글자 영문)은 제외
+              const brandRe = /^[a-zA-Z]{2}$/;
+              const spiColors = spiTokens.filter(t => !sizeRe.test(t) && !brandRe.test(t));
+              const spiSizes = spiTokens.filter(t => sizeRe.test(t)).map(t =>
+                t.toUpperCase() === 'FREE' ? 'Free' : t.toUpperCase()
+              );
+              const optParts = [];
+              if (spiColors.length > 0) optParts.push(`색상: ${spiColors.join(' ')}`);
+              if (spiSizes.length > 0) optParts.push(`사이즈: ${spiSizes[0]}`);
+              else if (parsed.size) optParts.push(`사이즈: ${parsed.size}`);
+              optionName = optParts.length > 0 ? optParts.join(' / ') : spi;
+            } else {
+              // fallback: vendorItemName 파싱 결과 사용
+              const optParts = [];
+              if (parsed.color) optParts.push(`색상: ${parsed.color}`);
+              if (parsed.size) optParts.push(`사이즈: ${parsed.size}`);
+              optionName = optParts.length > 0 ? optParts.join(' / ') : null;
+            }
 
             items.push({
               store: 'C',
@@ -668,6 +689,9 @@ app.get('/api/sync/returnable-items', async (req, res) => {
               lastChangedDate: ret.createdAt || null,
               ordererName: ret.buyerName || '',
               _parsed: parsed,
+              sellerProductItemName: ri.sellerProductItemName || '',
+              colorOptions: parsed.colorOptions || [],
+              sizeOptions: parsed.sizeOptions || [],
             });
           }
         }
@@ -1415,11 +1439,11 @@ function extractBrand(name) {
 // 쿠팡 vendorItemName 파싱: "ob 캐시미어 니트, 아이보리 free" → { productName, brand, color, size }
 // 콤마 앞 = 상품명 (브랜드 이니셜 포함), 콤마 뒤 = 옵션 (색상 + 사이즈)
 function parseCoupangItemName(vendorItemName) {
-  if (!vendorItemName) return { productName: '', brand: '', color: '', size: '' };
+  if (!vendorItemName) return { productName: '', brand: '', color: '', size: '', colorOptions: [], sizeOptions: [] };
 
   const commaIdx = vendorItemName.indexOf(',');
   if (commaIdx === -1) {
-    return { productName: vendorItemName.trim(), brand: extractBrand(vendorItemName), color: '', size: '' };
+    return { productName: vendorItemName.trim(), brand: extractBrand(vendorItemName), color: '', size: '', colorOptions: [], sizeOptions: [] };
   }
 
   let productName = vendorItemName.slice(0, commaIdx).trim();
@@ -1455,8 +1479,19 @@ function parseCoupangItemName(vendorItemName) {
     endIdx = tokens.length - 1;
   }
 
-  const color = tokens.slice(startIdx, endIdx).join(' ');
-  return { productName, brand, color, size };
+  // 중간 토큰에서 색상/사이즈 분리 (사이즈 키워드가 섞여있을 수 있음)
+  const middleTokens = tokens.slice(startIdx, endIdx);
+  const sizePattern = /^(free|xxl|xl|l|m|s|f)$/i;
+  const colorOptions = middleTokens.filter(t => !sizePattern.test(t));
+  const extraSizes = middleTokens.filter(t => sizePattern.test(t)).map(t =>
+    t.toUpperCase() === 'FREE' ? 'Free' : t.toUpperCase()
+  );
+
+  const color = middleTokens.join(' ');
+  const allSizes = [...new Set([...(size ? [size] : []), ...extraSizes])];
+  const sizeOptions = allSizes.length > 0 ? allSizes : [];
+
+  return { productName, brand, color, size, colorOptions, sizeOptions };
 }
 
 function maskSecret(str) {
