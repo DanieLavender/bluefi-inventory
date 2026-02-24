@@ -803,8 +803,12 @@ class SyncScheduler {
 
     // === 지그재그 자동 수집 ===
     try {
-      const zAccessKey = process.env.ZIGZAG_ACCESS_KEY || await getVal('zigzag_access_key');
-      const zSecretKey = process.env.ZIGZAG_SECRET_KEY || await getVal('zigzag_secret_key');
+      const getValZ = async (key) => {
+        const rows = await query('SELECT value FROM sync_config WHERE `key` = ?', [key]);
+        return rows[0] ? rows[0].value : '';
+      };
+      const zAccessKey = process.env.ZIGZAG_ACCESS_KEY || await getValZ('zigzag_access_key');
+      const zSecretKey = process.env.ZIGZAG_SECRET_KEY || await getValZ('zigzag_secret_key');
 
       if (zAccessKey && zSecretKey) {
         const zigzag = new ZigzagClient(zAccessKey, zSecretKey);

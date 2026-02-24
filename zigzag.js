@@ -106,10 +106,9 @@ class ZigzagClient {
           order_item_number
           quantity
           unit_price
-          product_name
-          option_name
           product_id
           status
+          product_info { name options }
           order {
             order_number
             date_created
@@ -142,6 +141,7 @@ class ZigzagClient {
 
       for (const item of result.item_list) {
         const order = item.order || {};
+        const pinfo = item.product_info || {};
         const orderNumber = order.order_number || '';
         const itemNumber = item.order_item_number || '';
         const rawDate = order.date_paid || order.date_created;
@@ -151,8 +151,8 @@ class ZigzagClient {
         allItems.push({
           productOrderId: `ZZG_${orderNumber}_${itemNumber}`,
           orderDate: rawDate ? this.parseTimestamp(rawDate) : new Date(toDate),
-          productName: item.product_name || '',
-          optionName: item.option_name || null,
+          productName: pinfo.name || '',
+          optionName: pinfo.options || null,
           qty,
           unitPrice,
           totalAmount: unitPrice * qty,
@@ -187,10 +187,9 @@ class ZigzagClient {
           order_item_number
           quantity
           unit_price
-          product_name
-          option_name
           product_id
           status
+          product_info { name options }
           order {
             order_number
             date_created
@@ -234,6 +233,7 @@ class ZigzagClient {
 
       for (const item of result.item_list) {
         const order = item.order || {};
+        const pinfo = item.product_info || {};
         const requests = item.active_request_list || [];
         const primaryReq = requests[0] || {};
 
@@ -244,9 +244,9 @@ class ZigzagClient {
           buyerName: (order.orderer && order.orderer.name) || '',
           returnItems: [{
             vendorItemId: String(item.product_id || ''),
-            vendorItemName: item.product_name || '',
+            vendorItemName: pinfo.name || '',
             returnQuantity: primaryReq.requested_quantity || item.quantity || 1,
-            sellerProductItemName: item.option_name || '',
+            sellerProductItemName: pinfo.options || '',
             _raw: item,
           }],
           createdAt: this.parseTimestamp(primaryReq.date_requested || order.date_created) || '',
