@@ -1610,6 +1610,20 @@
             .brand-card-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
             .brand-card-item { padding: 12px; }
         }
+
+        /* 모바일 가로 회전 시 강제 세로 표시 */
+        @media screen and (orientation: landscape) and (max-height: 600px) {
+            html {
+                transform: rotate(-90deg);
+                transform-origin: left top;
+                width: 100vh;
+                height: 100vw;
+                overflow-x: hidden;
+                position: absolute;
+                top: 100%;
+                left: 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -4590,6 +4604,17 @@
     if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
         document.getElementById('installBtn').style.display = 'none';
     }
+
+    // ===== 화면 세로 고정 (자동 회전 차단) =====
+    function lockPortrait() {
+        const orientation = screen.orientation || screen.mozOrientation || screen.msOrientation;
+        if (orientation && orientation.lock) {
+            orientation.lock('portrait').catch(() => {});
+        }
+    }
+    lockPortrait();
+    // fullscreen 진입 시에도 재잠금
+    document.addEventListener('fullscreenchange', lockPortrait);
     </script>
 
 </body>
