@@ -636,7 +636,7 @@ app.get('/api/sync/returnable-items', async (req, res) => {
             'PR': 'WAREHOUSE_CONFIRM', 'VENDOR_WAREHOUSE_CONFIRM': 'WAREHOUSE_CONFIRM',
             'REQUEST_COUPANG_CHECK': 'WAREHOUSE_CONFIRM',
             'CC': 'COLLECT_DONE', 'UNIT_COLLECTED': 'COLLECT_DONE',
-            'RETURNS_COMPLETED': 'RETURN_DONE',
+            'RETURNS_COMPLETED': 'COLLECT_DONE',
             'UC': 'COLLECTING', 'RETURNS_UNCHECKED': 'COLLECTING',
             'RU': 'COLLECTING', 'RELEASE_STOP_UNCHECKED': 'COLLECTING',
           };
