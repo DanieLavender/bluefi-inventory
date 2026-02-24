@@ -238,7 +238,7 @@ class ZigzagClient {
         const primaryReq = requests[0] || {};
 
         allReturns.push({
-          receiptId: primaryReq.order_item_request_number || item.order_item_number || '',
+          receiptId: item.order_item_number || primaryReq.order_item_request_number || '',
           orderId: order.order_number || '',
           receiptStatus: primaryReq.status || item.status || '',
           buyerName: (order.orderer && order.orderer.name) || '',
