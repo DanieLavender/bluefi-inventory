@@ -464,11 +464,7 @@
             color:#16A34A; background:#F0FDF4; border:1px solid #BBF7D0;
             border-radius:var(--radius-sm); white-space:nowrap;
         }
-        .return-item-added .return-item-name,
-        .return-item-added .return-item-option,
-        .return-item-added .return-item-date,
-        .return-item-added .store-badge,
-        .return-item-added .brand-badge {
+        .return-item-added {
             opacity: 0.5;
         }
         .return-added-label {
@@ -3624,9 +3620,8 @@
             }
 
             empty.style.display = 'none';
-            const unadded = items.filter(i => !i.alreadyAdded);
-            countBadge.textContent = unadded.length;
-            countBadge.style.display = unadded.length > 0 ? '' : 'none';
+            countBadge.textContent = items.length;
+            countBadge.style.display = items.length > 0 ? '' : 'none';
 
             let html = '';
             for (const item of items) {
