@@ -618,6 +618,10 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         console.log(`[Returnable] 쿠팡 클라이언트 초기화 성공, 반품 조회 시작...`);
         const coupangReturns = await coupangClient.getReturnRequests(from.toISOString(), now.toISOString());
         console.log(`[Returnable] 쿠팡: ${coupangReturns.length}건 감지`);
+        // 상태별 분포 로깅
+        const cDist = {};
+        for (const r of coupangReturns) { cDist[r.receiptStatus] = (cDist[r.receiptStatus] || 0) + 1; }
+        console.log(`[Returnable] 쿠팡 receiptStatus 분포:`, JSON.stringify(cDist));
 
         for (const ret of coupangReturns) {
           // 상태 매핑: 쿠팡 receiptStatus → 네이버 claimStatus 호환
