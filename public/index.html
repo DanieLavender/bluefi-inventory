@@ -2941,6 +2941,7 @@
                 await loadSyncLogs();
             } else {
                 await Promise.all([loadStats(), loadBrands(), loadData()]);
+                fetchConfirmedReturns();
                 updateRefreshTime();
             }
             showToast('새로고침 완료', 'success');
