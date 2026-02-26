@@ -49,8 +49,18 @@ function extractProductInfo(v2Detail, channelProductNo) {
   };
 }
 
-// 백그라운드 인덱싱: v1 목록 → v2 상세(1건/초) → DB 저장
-async function runProductIndexing() {
+// 빠른 체크: 새 상품이 있는지 v1 1페이지만 호출하여 확인
+async function checkForNewProducts() {
+  await initSyncClients();
+  const data = await scheduler.storeA.apiCall('POST', '/v1/products/search', { page: 1, size: 1 });
+  const apiTotal = data && data.totalElements || data && data.totalCount || 0;
+  const dbRows = await query('SELECT COUNT(*) as cnt FROM store_a_products');
+  const dbTotal = dbRows[0].cnt;
+  return { apiTotal, dbTotal, hasNew: apiTotal > dbTotal };
+}
+
+// 백그라운드 인덱싱: 신규 상품만 증분 인덱싱
+async function runProductIndexing(fullRefresh = false) {
   if (indexingActive) return;
   indexingActive = true;
   indexingProgress = { current: 0, total: 0, startedAt: new Date().toISOString() };
@@ -58,7 +68,18 @@ async function runProductIndexing() {
   try {
     await initSyncClients();
 
-    // Step 1: v1으로 전체 상품번호 수집
+    // Step 1: 빠른 체크 (API 1회) — 새 상품 있는지 확인
+    if (!fullRefresh) {
+      const check = await checkForNewProducts();
+      console.log(`[Index] 빠른 체크: API ${check.apiTotal}개, DB ${check.dbTotal}개`);
+      if (!check.hasNew) {
+        console.log('[Index] 새 상품 없음 — 스킵');
+        indexingActive = false;
+        return;
+      }
+    }
+
+    // Step 2: v1으로 전체 상품번호 수집
     console.log('[Index] 상품번호 수집 시작...');
     const allNos = await scheduler.storeA.getAllProductNumbers();
     console.log(`[Index] 상품번호 ${allNos.length}개`);
@@ -67,11 +88,27 @@ async function runProductIndexing() {
     const existingRows = await query('SELECT channel_product_no FROM store_a_products');
     const existingSet = new Set(existingRows.map(r => r.channel_product_no));
     const newNos = allNos.filter(no => !existingSet.has(no));
+
+    // DB에 있지만 API에 없는 상품 삭제 (삭제된 상품 정리)
+    const apiSet = new Set(allNos);
+    const deletedNos = existingRows.map(r => r.channel_product_no).filter(no => !apiSet.has(no));
+    if (deletedNos.length > 0) {
+      const ph = deletedNos.map(() => '?').join(',');
+      await query(`DELETE FROM store_a_products WHERE channel_product_no IN (${ph})`, deletedNos);
+      console.log(`[Index] 삭제된 상품 정리: ${deletedNos.length}건`);
+    }
+
     console.log(`[Index] 신규 ${newNos.length}개 (기존 ${existingSet.size}개)`);
+
+    if (newNos.length === 0) {
+      console.log('[Index] 인덱싱할 신규 상품 없음');
+      indexingActive = false;
+      return;
+    }
 
     indexingProgress.total = newNos.length;
 
-    // Step 2: 1건씩 v2 조회 → DB 저장 (1초 간격, rate limit 방지)
+    // Step 3: 1건씩 v2 조회 → DB 저장 (1초 간격, rate limit 방지)
     for (let i = 0; i < newNos.length; i++) {
       if (!indexingActive) break; // 중지 요청 시
 
@@ -103,6 +140,20 @@ async function runProductIndexing() {
   } finally {
     indexingActive = false;
   }
+}
+
+// 자동 인덱싱 스케줄러 (6시간마다 새 상품 체크)
+let autoIndexInterval = null;
+function startAutoIndexing() {
+  if (autoIndexInterval) return;
+  const SIX_HOURS = 6 * 60 * 60 * 1000;
+  autoIndexInterval = setInterval(() => {
+    if (!indexingActive) {
+      console.log('[Index] 자동 체크 실행');
+      runProductIndexing().catch(e => console.log('[Index] 자동 체크 오류:', e.message));
+    }
+  }, SIX_HOURS);
+  console.log('[Index] 자동 인덱싱 활성화 (6시간 간격)');
 }
 
 // --- API Routes ---
@@ -2068,6 +2119,9 @@ async function initZigzagClient() {
 
   app.listen(PORT, () => {
     console.log(`블루파이 재고관리 서버 실행중: http://localhost:${PORT}`);
+
+    // 자동 인덱싱 시작 (6시간마다 새 상품 체크)
+    startAutoIndexing();
 
     // Render 무료 플랜 keep-alive: 14분마다 self-ping으로 spin-down 방지
     if (process.env.RENDER_EXTERNAL_URL || process.env.NODE_ENV === 'production') {
