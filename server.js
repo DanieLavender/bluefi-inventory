@@ -1737,6 +1737,7 @@ app.post('/api/sync/save-keys', async (req, res) => {
   try {
     const { store_a_client_id, store_a_client_secret, store_b_client_id, store_b_client_secret,
             store_b_display_status, store_b_sale_status, store_b_name_prefix,
+            store_b_return_fee, store_b_exchange_fee,
             sync_interval_minutes,
             coupang_access_key, coupang_secret_key, coupang_vendor_id,
             coupang_category_code, coupang_outbound_code, coupang_return_center_code, coupang_price_rate,
@@ -1750,6 +1751,8 @@ app.post('/api/sync/save-keys', async (req, res) => {
     if (store_b_display_status) await query(upsertSql, ['store_b_display_status', store_b_display_status]);
     if (store_b_sale_status) await query(upsertSql, ['store_b_sale_status', store_b_sale_status]);
     if (store_b_name_prefix !== undefined) await query(upsertSql, ['store_b_name_prefix', store_b_name_prefix]);
+    if (store_b_return_fee !== undefined) await query(upsertSql, ['store_b_return_fee', store_b_return_fee]);
+    if (store_b_exchange_fee !== undefined) await query(upsertSql, ['store_b_exchange_fee', store_b_exchange_fee]);
     // 동기화 주기
     if (sync_interval_minutes) await query(upsertSql, ['sync_interval_minutes', sync_interval_minutes]);
     // 쿠팡
