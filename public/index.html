@@ -2561,6 +2561,25 @@
         </div>
     </div>
 
+    <!-- ===== Channel Link Modal (수동 매칭) ===== -->
+    <div class="modal-overlay" id="linkModal">
+        <div class="modal" style="width:560px;max-height:85vh;display:flex;flex-direction:column;">
+            <h2 style="margin-bottom:4px;">A스토어 상품 연결</h2>
+            <p id="linkMasterInfo" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;"></p>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <input type="text" id="linkSearchInput" placeholder="A스토어 상품명 검색..."
+                    style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;">
+                <button onclick="searchForLink()" class="btn btn-accent" style="padding:8px 14px;font-size:13px;">검색</button>
+            </div>
+            <div id="linkSearchResults" style="flex:1;overflow-y:auto;min-height:200px;max-height:400px;border:1px solid var(--border);border-radius:var(--radius-sm);">
+                <p style="text-align:center;color:var(--text-tertiary);padding:40px 0;font-size:13px;">상품명 키워드로 검색하세요</p>
+            </div>
+            <div class="modal-actions" style="margin-top:12px;">
+                <button class="btn btn-outline" onclick="closeLinkModal()">취소</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ===== Dropdown Menu (shared) ===== -->
     <div class="dropdown-menu" id="dropdownMenu">
         <button class="dropdown-item" onclick="dropdownEdit()">
@@ -5185,6 +5204,93 @@
         zigzag: { name: '지그재그', bg: '#6C2CF5', color: '#fff' },
     };
 
+    // --- 수동 매칭 모달 ---
+    let linkTargetMasterId = null;
+
+    async function openLinkModal(masterId) {
+        linkTargetMasterId = masterId;
+        // 마스터 상품 정보 가져오기
+        try {
+            const item = await api(`/api/master/products/${masterId}`);
+            document.getElementById('linkMasterInfo').textContent =
+                `${item.sku} · ${item.name} · ${item.color || ''}`;
+            // 상품명에서 키워드 자동 추출 (브랜드코드 제거 후 첫 2단어)
+            const words = (item.name || '').replace(/^[a-zA-Z]{2}\s/, '').split(/\s+/).filter(w => w.length > 1);
+            const suggest = words.slice(0, 2).join(' ');
+            document.getElementById('linkSearchInput').value = suggest;
+        } catch(e) {
+            document.getElementById('linkMasterInfo').textContent = `ID: ${masterId}`;
+        }
+        document.getElementById('linkSearchResults').innerHTML =
+            '<p style="text-align:center;color:var(--text-tertiary);padding:40px 0;font-size:13px;">검색 버튼을 눌러주세요</p>';
+        document.getElementById('linkModal').classList.add('active');
+        document.body.classList.add('modal-open');
+        // 자동 검색
+        searchForLink();
+        // 엔터키
+        document.getElementById('linkSearchInput').onkeydown = (e) => { if (e.key === 'Enter') searchForLink(); };
+    }
+
+    function closeLinkModal() {
+        document.getElementById('linkModal').classList.remove('active');
+        document.body.classList.remove('modal-open');
+        linkTargetMasterId = null;
+    }
+
+    async function searchForLink() {
+        const keyword = document.getElementById('linkSearchInput').value.trim();
+        if (!keyword) return;
+        const container = document.getElementById('linkSearchResults');
+        container.innerHTML = '<p style="text-align:center;padding:20px 0;font-size:13px;color:var(--text-tertiary);">검색 중...</p>';
+
+        try {
+            const data = await api(`/api/store-a/products/search?keyword=${encodeURIComponent(keyword)}`);
+            if (!data.items || data.items.length === 0) {
+                container.innerHTML = '<p style="text-align:center;padding:20px 0;font-size:13px;color:var(--text-secondary);">검색 결과 없음</p>';
+                return;
+            }
+            container.innerHTML = data.items.map(p => {
+                const price = p.sale_price ? p.sale_price.toLocaleString() + '원' : '';
+                const status = p.status_type === 'SALE' ? '<span style="color:#16A34A;">판매중</span>'
+                    : p.status_type ? `<span style="color:#EA580C;">${p.status_type}</span>` : '';
+                return `<div onclick="linkProduct('${p.channel_product_no}', '${escapeHtml(p.name).replace(/'/g, "\\'")}', ${p.sale_price || 0})"
+                    style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;"
+                    onmouseover="this.style.background='var(--bg-primary)'" onmouseout="this.style.background=''">
+                    <div style="font-size:13px;font-weight:500;margin-bottom:2px;">${escapeHtml(p.name)}</div>
+                    <div style="font-size:11px;color:var(--text-secondary);">
+                        ${price} ${status}
+                        <span style="color:var(--text-tertiary);margin-left:8px;">#${p.channel_product_no}</span>
+                    </div>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            container.innerHTML = `<p style="text-align:center;padding:20px 0;color:#E53E3E;font-size:13px;">${e.message}</p>`;
+        }
+    }
+
+    async function linkProduct(channelProductId, channelProductName, channelPrice) {
+        if (!linkTargetMasterId) return;
+        try {
+            await api(`/api/master/products/${linkTargetMasterId}/link`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    channel: 'naver_a',
+                    channel_product_id: channelProductId,
+                    channel_product_name: channelProductName,
+                    channel_price: channelPrice,
+                    match_type: 'manual',
+                }),
+            });
+            showToast('A스토어 상품 연결 완료', 'success');
+            closeLinkModal();
+            loadMasterProducts(masterCurrentPage);
+            loadMasterStats();
+        } catch (e) {
+            showToast('연결 실패: ' + e.message, 'error');
+        }
+    }
+
     async function initMasterPage() {
         loadMasterStats();
         loadMasterProducts();
@@ -5261,7 +5367,7 @@
                     <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${escapeHtml(item.name)}</div>
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <span style="font-size:12px;color:var(--text-secondary);">${escapeHtml(item.color || '')}${item.supplier ? ` · ${item.supplier}` : ''}</span>
-                        <div>${channelBadges || '<span style="font-size:10px;color:var(--text-tertiary);">미연결</span>'}</div>
+                        <div>${channelBadges}<span onclick="openLinkModal(${item.id})" style="display:inline-block;padding:2px 5px;border-radius:4px;font-size:10px;color:var(--accent);cursor:pointer;border:1px dashed var(--accent);margin-left:2px;">+</span></div>
                     </div>
                 </div>`;
             }).join('');
@@ -5302,7 +5408,7 @@
                             <td style="text-align:center;">${stockLabel}</td>
                             <td style="text-align:center;">${salesQty}</td>
                             <td style="font-size:11px;color:var(--text-secondary);">${formatMasterDate(item.created_at)}</td>
-                            <td>${channelBadges || '<span style="color:var(--text-tertiary);font-size:11px;">미연결</span>'}</td>
+                            <td>${channelBadges}<span onclick="openLinkModal(${item.id})" style="display:inline-block;padding:2px 5px;border-radius:4px;font-size:10px;color:var(--accent);cursor:pointer;border:1px dashed var(--accent);margin-left:2px;" title="채널 연결">+</span></td>
                         </tr>`;
                     }).join('')}</tbody>
                 </table>`;
