@@ -2600,6 +2600,24 @@
             <!-- 현재 연결 상태 -->
             <div id="linkCurrentChannels" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;"></div>
 
+            <!-- 상품 복사 (네이버A 연결 시 표시) -->
+            <div id="linkCopyArea" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--accent-light);border-radius:var(--radius-sm);border:1px solid var(--accent-lighter);">
+                <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;">네이버A → 다른 채널 복사</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                    <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                        <input type="checkbox" id="copyTargetB" checked> 네이버 B
+                    </label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                        <input type="checkbox" id="copyTargetCoupang"> 쿠팡
+                    </label>
+                    <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                        <input type="checkbox" id="copyTargetZigzag"> 지그재그
+                    </label>
+                    <button onclick="copyFromModal()" id="modalCopyBtn" class="btn btn-accent" style="padding:5px 14px;font-size:12px;margin-left:auto;">복사 실행</button>
+                </div>
+                <p id="modalCopyStatus" style="font-size:11px;color:var(--text-secondary);margin-top:4px;display:none;"></p>
+            </div>
+
             <!-- 채널 선택 탭 -->
             <div style="display:flex;gap:4px;margin-bottom:10px;">
                 <button onclick="setLinkChannel('naver_a')" id="linkTab_naver_a" class="btn btn-outline" style="padding:5px 12px;font-size:12px;font-weight:600;">네이버 A</button>
@@ -5305,6 +5323,25 @@
                 </div>`;
             }
         }).join('');
+
+        // 네이버A 연결 시 복사 영역 표시
+        const copyArea = document.getElementById('linkCopyArea');
+        const naverALinked = channels.find(c => c.channel === 'naver_a');
+        if (copyArea) {
+            copyArea.style.display = naverALinked ? 'block' : 'none';
+            // 이미 연결된 채널은 체크박스 비활성화 + 체크 해제
+            const bLinked = channels.find(c => c.channel === 'naver_b');
+            const cpLinked = channels.find(c => c.channel === 'coupang');
+            const zzLinked = channels.find(c => c.channel === 'zigzag');
+            const cbB = document.getElementById('copyTargetB');
+            const cbC = document.getElementById('copyTargetCoupang');
+            const cbZ = document.getElementById('copyTargetZigzag');
+            if (cbB) { cbB.disabled = !!bLinked; cbB.checked = !bLinked; }
+            if (cbC) { cbC.disabled = !!cpLinked; cbC.checked = false; }
+            if (cbZ) { cbZ.disabled = !!zzLinked; cbZ.checked = false; }
+            const statusEl = document.getElementById('modalCopyStatus');
+            if (statusEl) { statusEl.style.display = 'none'; statusEl.textContent = ''; }
+        }
     }
 
     function setLinkChannel(channel) {
@@ -5425,6 +5462,82 @@
             loadMasterStats();
         } catch (e) {
             showToast('해제 실패: ' + e.message, 'error');
+        }
+    }
+
+    async function copyFromModal() {
+        if (!linkTargetItem) return;
+        const channels = (linkTargetItem.channels || []);
+        const naverA = channels.find(c => c.channel === 'naver_a');
+        if (!naverA) { showToast('네이버A가 연결되어 있지 않습니다', 'error'); return; }
+
+        const targets = [];
+        if (document.getElementById('copyTargetB')?.checked) targets.push('storeB');
+        if (document.getElementById('copyTargetCoupang')?.checked) targets.push('coupang');
+        if (document.getElementById('copyTargetZigzag')?.checked) targets.push('zigzag');
+        if (targets.length === 0) { showToast('복사할 채널을 선택하세요', 'warning'); return; }
+
+        const btn = document.getElementById('modalCopyBtn');
+        const statusEl = document.getElementById('modalCopyStatus');
+        btn.disabled = true;
+        btn.textContent = '복사 중...';
+        statusEl.style.display = 'block';
+        statusEl.textContent = '상품 복사 진행 중...';
+
+        try {
+            const result = await api('/api/products/copy-bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    products: [naverA.channel_product_id],
+                    targets,
+                    options: {},
+                }),
+            });
+
+            const detail = result.details && result.details[0];
+            const msgs = [];
+            if (detail && detail.results) {
+                for (const [ch, r] of Object.entries(detail.results)) {
+                    if (r.success) {
+                        msgs.push(`${ch}: 성공`);
+                        // 복사 결과를 channel_products에 자동 연결
+                        const chMap = { storeB: 'naver_b', coupang: 'coupang', zigzag: 'zigzag' };
+                        const chKey = chMap[ch];
+                        if (chKey && r.targetProductId) {
+                            try {
+                                await api(`/api/master/products/${linkTargetMasterId}/link`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        channel: chKey,
+                                        channel_product_id: String(r.targetProductId),
+                                        channel_product_name: r.productName || '',
+                                        match_type: 'copy',
+                                    }),
+                                });
+                            } catch (e) { /* 연결 실패해도 복사는 성공 */ }
+                        }
+                    } else {
+                        msgs.push(`${ch}: ${r.error || r.message || '실패'}`);
+                    }
+                }
+            }
+
+            statusEl.textContent = msgs.join(' · ') || '완료';
+            showToast(`복사 완료: ${result.summary?.success || 0}건 성공`, result.summary?.success > 0 ? 'success' : 'warning');
+
+            // 모달 상태 갱신
+            linkTargetItem = await api(`/api/master/products/${linkTargetMasterId}`);
+            renderCurrentChannels();
+            loadMasterProducts(masterCurrentPage);
+            loadMasterStats();
+        } catch (e) {
+            statusEl.textContent = '복사 실패: ' + e.message;
+            showToast('복사 실패: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '복사 실행';
         }
     }
 
