@@ -2261,7 +2261,6 @@
                             <option value="newest">최신 등록순</option>
                             <option value="updated">최근 수정순</option>
                             <option value="qty_desc">재고 많은순</option>
-                            <option value="qty_asc">재고 적은순</option>
                         </select>
                         <button onclick="loadMasterProducts()" class="btn btn-accent" style="padding:8px 16px;font-size:13px;">검색</button>
                         <button onclick="toggleBulkMatch()" id="bulkMatchToggle" class="btn btn-outline" style="padding:8px 16px;font-size:13px;">일괄 매칭</button>
@@ -5290,18 +5289,95 @@
         linkTargetMasterId = masterId;
         try {
             linkTargetItem = await api(`/api/master/products/${masterId}`);
+            const variants = linkTargetItem.variants || [];
+            const colorInfo = variants.map(v => v.color).filter(Boolean).join(', ');
             document.getElementById('linkMasterInfo').textContent =
-                `${linkTargetItem.sku} · ${linkTargetItem.name} · ${linkTargetItem.color || ''}`;
+                `${linkTargetItem.sku} · ${linkTargetItem.name}${colorInfo ? ' · ' + colorInfo : ''}`;
         } catch(e) {
             linkTargetItem = null;
             document.getElementById('linkMasterInfo').textContent = `ID: ${masterId}`;
         }
         renderCurrentChannels();
+        renderVariantsInModal();
         setLinkChannel('naver_a');
         document.getElementById('linkModal').classList.add('active');
         document.body.classList.add('modal-open');
         document.getElementById('linkSearchInput').onkeydown = (e) => { if (e.key === 'Enter') searchForLink(); };
         document.getElementById('linkManualId').onkeydown = (e) => { if (e.key === 'Enter') linkManualProduct(); };
+    }
+
+    function renderVariantsInModal() {
+        let container = document.getElementById('linkVariants');
+        if (!container) {
+            // 동적 생성: linkCurrentChannels 위에 삽입
+            const channelsEl = document.getElementById('linkCurrentChannels');
+            container = document.createElement('div');
+            container.id = 'linkVariants';
+            container.style.cssText = 'margin-bottom:12px;';
+            channelsEl.parentNode.insertBefore(container, channelsEl);
+        }
+        if (!linkTargetItem) { container.innerHTML = ''; return; }
+        const variants = linkTargetItem.variants || [];
+        const totalQty = variants.reduce((s, v) => s + v.qty, 0);
+        const isInv = linkTargetItem.stock_type === 'inventory';
+
+        container.innerHTML = `
+            <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">
+                옵션 (${variants.length}개)${isInv ? ` · 총 재고: <span style="color:#16A34A;">${totalQty}개</span>` : ''}
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+                ${variants.map(v => `
+                    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg-primary);border-radius:6px;font-size:12px;">
+                        <span style="font-weight:500;min-width:80px;">${escapeHtml(v.color || '-')}</span>
+                        <span style="color:var(--text-tertiary);min-width:40px;">${v.size || '-'}</span>
+                        ${isInv ? `
+                            <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
+                                <button onclick="changeVariantQty(${v.id}, ${v.qty - 1})" class="btn btn-outline" style="padding:1px 6px;font-size:11px;min-width:20px;">-</button>
+                                <span style="font-weight:600;min-width:20px;text-align:center;">${v.qty}</span>
+                                <button onclick="changeVariantQty(${v.id}, ${v.qty + 1})" class="btn btn-outline" style="padding:1px 6px;font-size:11px;min-width:20px;">+</button>
+                            </div>
+                        ` : '<span style="margin-left:auto;color:#EA580C;">사입</span>'}
+                    </div>
+                `).join('')}
+                <button onclick="addVariantPrompt()" class="btn btn-outline" style="padding:4px 10px;font-size:11px;margin-top:4px;">+ 옵션 추가</button>
+            </div>`;
+    }
+
+    async function changeVariantQty(variantId, newQty) {
+        if (newQty < 0) newQty = 0;
+        try {
+            await api(`/api/master/variants/${variantId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ qty: newQty }),
+            });
+            linkTargetItem = await api(`/api/master/products/${linkTargetMasterId}`);
+            renderVariantsInModal();
+            loadMasterProducts(masterCurrentPage);
+        } catch (e) {
+            showToast('수량 변경 실패: ' + e.message, 'error');
+        }
+    }
+
+    async function addVariantPrompt() {
+        const color = prompt('컬러명 입력:');
+        if (color === null) return;
+        const size = prompt('사이즈 (없으면 비워두세요):') || null;
+        const qtyStr = prompt('수량:', '0');
+        const qty = parseInt(qtyStr) || 0;
+        try {
+            await api(`/api/master/products/${linkTargetMasterId}/variants`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ color, size, qty }),
+            });
+            linkTargetItem = await api(`/api/master/products/${linkTargetMasterId}`);
+            renderVariantsInModal();
+            loadMasterProducts(masterCurrentPage);
+            showToast('옵션 추가 완료', 'success');
+        } catch (e) {
+            showToast('옵션 추가 실패: ' + e.message, 'error');
+        }
     }
 
     function getChannelNo(item, key) {
@@ -5590,19 +5666,23 @@
                     const linked = item[channelCols[key]];
                     return `<span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${linked ? l.bg : '#ddd'};line-height:16px;text-align:center;font-size:7px;font-weight:700;color:#fff;">${l.name.charAt(0)}</span>`;
                 }).join('');
+                const variants = item.variants || [];
+                const totalQty = item.totalQty || 0;
+                const variantColors = variants.map(v => v.color).filter(Boolean).slice(0, 3).join(', ');
                 const stockLabel = item.stock_type === 'inventory'
-                    ? `<span style="color:#16A34A;font-weight:600;">${item.qty}개</span>`
+                    ? `<span style="color:#16A34A;font-weight:600;">${totalQty}개</span>`
                     : '<span style="color:#EA580C;font-size:11px;">사입</span>';
                 const salesQty = item.sales && item.sales.totalQty > 0
                     ? `<span style="font-size:11px;color:var(--accent);">판매 ${item.sales.totalQty}개</span>` : '';
+                const variantBadge = variants.length > 1 ? `<span style="font-size:10px;color:var(--text-tertiary);background:var(--bg-primary);padding:1px 5px;border-radius:8px;">${variants.length}옵션</span>` : '';
                 return `<div onclick="openLinkModal(${item.id})" style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;">
                     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">
                         <span style="font-size:11px;color:var(--text-tertiary);font-weight:600;">${item.sku}</span>
-                        <div>${salesQty} ${stockLabel}</div>
+                        <div>${salesQty} ${stockLabel} ${variantBadge}</div>
                     </div>
                     <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${escapeHtml(item.name)}</div>
                     <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-size:12px;color:var(--text-secondary);">${escapeHtml(item.color || '')}${item.supplier ? ` · ${item.supplier}` : ''}</span>
+                        <span style="font-size:12px;color:var(--text-secondary);">${escapeHtml(variantColors)}${item.supplier ? ` · ${item.supplier}` : ''}</span>
                         <div style="display:flex;gap:2px;">${channelDots}</div>
                     </div>
                 </div>`;
@@ -5613,7 +5693,7 @@
                     <thead><tr>
                         <th style="width:100px;">품번</th>
                         <th>상품명</th>
-                        <th style="width:80px;">컬러</th>
+                        <th style="width:120px;">옵션</th>
                         <th style="width:50px;">거래처</th>
                         <th style="width:45px;">유형</th>
                         <th style="width:40px;text-align:center;">재고</th>
@@ -5629,8 +5709,13 @@
                             const title = no ? `${channelNames[key]}: #${no}` : `${channelNames[key]}: 미연결`;
                             return `<span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${bg};line-height:18px;text-align:center;font-size:8px;font-weight:700;color:#fff;cursor:default;" title="${escapeHtml(title)}">${l.name.charAt(0)}</span>`;
                         }).join('');
+                        const variants = item.variants || [];
+                        const totalQty = item.totalQty || 0;
+                        const variantSummary = variants.length <= 2
+                            ? variants.map(v => v.color || '-').join(', ')
+                            : variants.slice(0, 2).map(v => v.color || '-').join(', ') + ` +${variants.length - 2}`;
                         const stockLabel = item.stock_type === 'inventory'
-                            ? `<span style="font-weight:600;">${item.qty}</span>`
+                            ? `<span style="font-weight:600;">${totalQty}</span>`
                             : '<span style="color:var(--text-tertiary);">-</span>';
                         const typeLabel = item.stock_type === 'inventory'
                             ? '<span style="color:#16A34A;">재고</span>'
@@ -5641,7 +5726,7 @@
                         return `<tr style="cursor:pointer;" onclick="openLinkModal(${item.id})">
                             <td style="font-weight:600;color:var(--accent);font-size:12px;">${item.sku}</td>
                             <td>${escapeHtml(item.name)}</td>
-                            <td>${escapeHtml(item.color || '')}</td>
+                            <td style="font-size:11px;">${escapeHtml(variantSummary)}${variants.length > 1 ? ` <span style="color:var(--text-tertiary);">(${variants.length})</span>` : ''}</td>
                             <td style="text-align:center;">${escapeHtml(item.supplier || item.brand || '')}</td>
                             <td>${typeLabel}</td>
                             <td style="text-align:center;">${stockLabel}</td>

@@ -396,6 +396,93 @@ async function initDb() {
     );
   }
 
+  // === 옵션(variants) 테이블: 상품별 컬러/사이즈/재고 ===
+  await query(`
+    CREATE TABLE IF NOT EXISTS variants (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      product_id INT NOT NULL,
+      color VARCHAR(255) DEFAULT '',
+      size VARCHAR(255) DEFAULT NULL,
+      qty INT NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT NULL,
+      INDEX idx_product (product_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  // === 마이그레이션: products → products(상품) + variants(옵션) 분리 (1회성) ===
+  const [variantsMigrated] = await getPool().query(
+    "SELECT value FROM sync_config WHERE `key` = 'variants_migrated'"
+  ).catch(() => [[]]);
+  if (!variantsMigrated || variantsMigrated.length === 0 || variantsMigrated[0]?.value !== 'true') {
+    // products에 color/size/qty가 있는 행들을 그룹핑하여 variants로 분리
+    // 같은 (name, naver_a_no)을 가진 행 → 하나의 상품, 나머지는 옵션
+    const allProducts = await query('SELECT * FROM products ORDER BY id');
+    if (allProducts.length > 0) {
+      // 그룹 키: naver_a_no가 있으면 naver_a_no, 없으면 name+brand+supplier 조합
+      const groups = {};
+      for (const p of allProducts) {
+        const key = p.naver_a_no
+          ? `na:${p.naver_a_no}`
+          : `nm:${p.name}|${p.brand}|${p.supplier}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(p);
+      }
+
+      let mergedCount = 0;
+      let variantCount = 0;
+      for (const [, items] of Object.entries(groups)) {
+        if (items.length <= 1) {
+          // 단일 상품 → 그대로 두고 variant 1개 생성
+          const p = items[0];
+          await query(
+            'INSERT INTO variants (product_id, color, size, qty, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [p.id, p.color || '', p.size || null, p.qty, p.created_at, p.updated_at]
+          );
+          variantCount++;
+          continue;
+        }
+
+        // 다중 행 → 첫 번째를 대표로, 나머지를 variants로 이관
+        const primary = items[0];
+
+        // 대표 상품에 모든 채널 번호 병합 (null이 아닌 값 우선)
+        let naverB = primary.naver_b_no, coupang = primary.coupang_no, zigzag = primary.zigzag_no;
+        for (const p of items) {
+          if (!naverB && p.naver_b_no) naverB = p.naver_b_no;
+          if (!coupang && p.coupang_no) coupang = p.coupang_no;
+          if (!zigzag && p.zigzag_no) zigzag = p.zigzag_no;
+        }
+        if (naverB !== primary.naver_b_no || coupang !== primary.coupang_no || zigzag !== primary.zigzag_no) {
+          await query('UPDATE products SET naver_b_no = ?, coupang_no = ?, zigzag_no = ? WHERE id = ?',
+            [naverB, coupang, zigzag, primary.id]);
+        }
+
+        // 모든 행을 variants로 변환
+        for (const p of items) {
+          await query(
+            'INSERT INTO variants (product_id, color, size, qty, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [primary.id, p.color || '', p.size || null, p.qty, p.created_at, p.updated_at]
+          );
+          variantCount++;
+        }
+
+        // 대표 외 중복 행 삭제
+        const dupIds = items.slice(1).map(p => p.id);
+        if (dupIds.length > 0) {
+          const ph = dupIds.map(() => '?').join(',');
+          await query(`DELETE FROM products WHERE id IN (${ph})`, dupIds);
+          mergedCount += dupIds.length;
+        }
+      }
+      console.log(`[DB] variants 마이그레이션 완료: ${variantCount}개 옵션, ${mergedCount}개 중복 상품 병합`);
+    }
+
+    await query(
+      "INSERT INTO sync_config (`key`, value) VALUES ('variants_migrated', 'true') ON DUPLICATE KEY UPDATE value = 'true'"
+    );
+  }
+
   // Seed sync_config defaults
   const configDefaults = [
     ['sync_enabled', 'false'],

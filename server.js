@@ -180,7 +180,7 @@ app.get('/api/master/products', async (req, res) => {
     if (search) {
       const keywords = search.trim().split(/\s+/);
       for (const kw of keywords) {
-        conditions.push('(p.name LIKE ? OR p.color LIKE ? OR p.sku LIKE ?)');
+        conditions.push('(p.name LIKE ? OR p.sku LIKE ? OR EXISTS (SELECT 1 FROM variants v2 WHERE v2.product_id = p.id AND v2.color LIKE ?))');
         params.push(`%${kw}%`, `%${kw}%`, `%${kw}%`);
       }
     }
@@ -202,14 +202,25 @@ app.get('/api/master/products', async (req, res) => {
     if (sort === 'updated') orderBy = 'p.updated_at DESC';
     if (sort === 'name') orderBy = 'p.name ASC';
     if (sort === 'sku') orderBy = 'p.sku ASC';
-    if (sort === 'qty_asc') orderBy = 'p.qty ASC';
-    if (sort === 'qty_desc') orderBy = 'p.qty DESC';
     if (sort === 'newest') orderBy = 'p.created_at DESC';
     if (sort === 'oldest') orderBy = 'p.created_at ASC';
+    if (sort === 'qty_desc') orderBy = '(SELECT COALESCE(SUM(v.qty),0) FROM variants v WHERE v.product_id = p.id) DESC';
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     params.push(parseInt(limit), offset);
     const rows = await query(`SELECT * FROM products p ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, params);
+
+    // variants 조회 (해당 페이지 상품들)
+    let variantsMap = {};
+    if (rows.length > 0) {
+      const pIds = rows.map(r => r.id);
+      const ph = pIds.map(() => '?').join(',');
+      const vRows = await query(`SELECT * FROM variants WHERE product_id IN (${ph}) ORDER BY id`, pIds);
+      for (const v of vRows) {
+        if (!variantsMap[v.product_id]) variantsMap[v.product_id] = [];
+        variantsMap[v.product_id].push(v);
+      }
+    }
 
     // 매출 데이터 집계
     let salesMap = {};
@@ -241,10 +252,16 @@ app.get('/api/master/products', async (req, res) => {
       }
     }
 
-    const items = rows.map(r => ({
-      ...r,
-      sales: salesMap[r.id] || { totalQty: 0, totalAmount: 0, firstOrder: null },
-    }));
+    const items = rows.map(r => {
+      const variants = variantsMap[r.id] || [];
+      const totalQty = variants.reduce((sum, v) => sum + v.qty, 0);
+      return {
+        ...r,
+        variants,
+        totalQty,
+        sales: salesMap[r.id] || { totalQty: 0, totalAmount: 0, firstOrder: null },
+      };
+    });
 
     res.json({ items, total, page: parseInt(page), limit: parseInt(limit) });
   } catch (e) {
@@ -258,6 +275,10 @@ app.get('/api/master/products/:id', async (req, res) => {
     const rows = await query('SELECT * FROM products WHERE id = ?', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: '상품 없음' });
     const p = rows[0];
+
+    // variants 조회
+    const variants = await query('SELECT * FROM variants WHERE product_id = ? ORDER BY id', [p.id]);
+    const totalQty = variants.reduce((sum, v) => sum + v.qty, 0);
 
     // 채널별 매출 집계
     let sales = { totalQty: 0, totalAmount: 0, firstOrder: null, byChannel: {} };
@@ -282,7 +303,7 @@ app.get('/api/master/products/:id', async (req, res) => {
       }
     }
 
-    res.json({ ...p, sales });
+    res.json({ ...p, variants, totalQty, sales });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -291,20 +312,72 @@ app.get('/api/master/products/:id', async (req, res) => {
 // PUT /api/master/products/:id - 상품 수정
 app.put('/api/master/products/:id', async (req, res) => {
   try {
-    const { name, brand, color, size, qty, stock_type } = req.body;
+    const { name, brand, stock_type, sale_price } = req.body;
     const sets = [];
     const params = [];
     if (name !== undefined) { sets.push('name = ?'); params.push(name); }
     if (brand !== undefined) { sets.push('brand = ?'); params.push(brand); }
+    if (stock_type !== undefined) { sets.push('stock_type = ?'); params.push(stock_type); }
+    if (sale_price !== undefined) { sets.push('sale_price = ?'); params.push(sale_price); }
+    if (sets.length > 0) {
+      sets.push('updated_at = NOW()');
+      params.push(req.params.id);
+      await query(`UPDATE products SET ${sets.join(', ')} WHERE id = ?`, params);
+    }
+    const rows = await query('SELECT * FROM products WHERE id = ?', [req.params.id]);
+    const variants = await query('SELECT * FROM variants WHERE product_id = ? ORDER BY id', [req.params.id]);
+    res.json({ ...rows[0], variants, totalQty: variants.reduce((s, v) => s + v.qty, 0) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/master/products/:id/variants - 옵션 추가
+app.post('/api/master/products/:id/variants', async (req, res) => {
+  try {
+    const { color, size, qty } = req.body;
+    const result = await query(
+      'INSERT INTO variants (product_id, color, size, qty) VALUES (?, ?, ?, ?)',
+      [req.params.id, color || '', size || null, qty || 0]
+    );
+    await query('UPDATE products SET updated_at = NOW() WHERE id = ?', [req.params.id]);
+    const rows = await query('SELECT * FROM variants WHERE id = ?', [result.insertId]);
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/master/variants/:variantId - 옵션 수정 (수량 변경 등)
+app.put('/api/master/variants/:variantId', async (req, res) => {
+  try {
+    const { color, size, qty } = req.body;
+    const sets = [];
+    const params = [];
     if (color !== undefined) { sets.push('color = ?'); params.push(color); }
     if (size !== undefined) { sets.push('size = ?'); params.push(size); }
     if (qty !== undefined) { sets.push('qty = ?, updated_at = NOW()'); params.push(qty); }
-    if (stock_type !== undefined) { sets.push('stock_type = ?'); params.push(stock_type); }
     if (sets.length === 0) return res.status(400).json({ error: '수정할 필드 없음' });
-    params.push(req.params.id);
-    await query(`UPDATE products SET ${sets.join(', ')} WHERE id = ?`, params);
-    const rows = await query('SELECT * FROM products WHERE id = ?', [req.params.id]);
+    params.push(req.params.variantId);
+    await query(`UPDATE variants SET ${sets.join(', ')} WHERE id = ?`, params);
+    const rows = await query('SELECT * FROM variants WHERE id = ?', [req.params.variantId]);
+    if (rows.length > 0) {
+      await query('UPDATE products SET updated_at = NOW() WHERE id = ?', [rows[0].product_id]);
+    }
     res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/master/variants/:variantId - 옵션 삭제
+app.delete('/api/master/variants/:variantId', async (req, res) => {
+  try {
+    const rows = await query('SELECT * FROM variants WHERE id = ?', [req.params.variantId]);
+    if (rows.length === 0) return res.status(404).json({ error: '옵션 없음' });
+    await query('DELETE FROM variants WHERE id = ?', [req.params.variantId]);
+    await query('UPDATE products SET updated_at = NOW() WHERE id = ?', [rows[0].product_id]);
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -347,11 +420,14 @@ app.get('/api/master/stats', async (req, res) => {
     const [cpRow] = await query('SELECT COUNT(*) as cnt FROM products WHERE coupang_no IS NOT NULL');
     const [zzRow] = await query('SELECT COUNT(*) as cnt FROM products WHERE zigzag_no IS NOT NULL');
     const [unlinkedRow] = await query('SELECT COUNT(*) as cnt FROM products WHERE naver_a_no IS NULL AND naver_b_no IS NULL AND coupang_no IS NULL AND zigzag_no IS NULL');
+    const [variantRow] = await query('SELECT COUNT(*) as cnt, COALESCE(SUM(qty), 0) as totalQty FROM variants');
     res.json({
       totalProducts: totalRow.cnt,
       inventoryProducts: invRow.cnt,
       sourcingProducts: srcRow.cnt,
       unlinkedProducts: unlinkedRow.cnt,
+      totalVariants: variantRow.cnt,
+      totalStockQty: Number(variantRow.totalQty),
       channelStats: { naver_a: naRow.cnt, naver_b: nbRow.cnt, coupang: cpRow.cnt, zigzag: zzRow.cnt },
     });
   } catch (e) {
@@ -393,11 +469,20 @@ app.post('/api/master/products', async (req, res) => {
     }
     const sku = `${prefix}${String(nextNum).padStart(3, '0')}`;
     const result = await query(
-      `INSERT INTO products (sku, name, brand, supplier, color, size, qty, stock_type, image_url, naver_a_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [sku, name, brand || '', sup, color || '', size || null, qty || 0, stock_type || 'sourcing', image_url || null, naver_a_no || null]
+      `INSERT INTO products (sku, name, brand, supplier, stock_type, image_url, naver_a_no) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [sku, name, brand || '', sup, stock_type || 'sourcing', image_url || null, naver_a_no || null]
     );
-    const rows = await query('SELECT * FROM products WHERE id = ?', [result.insertId]);
-    res.json(rows[0]);
+    const productId = result.insertId;
+    // 초기 옵션 생성
+    if (color || size || qty) {
+      await query(
+        'INSERT INTO variants (product_id, color, size, qty) VALUES (?, ?, ?, ?)',
+        [productId, color || '', size || null, qty || 0]
+      );
+    }
+    const rows = await query('SELECT * FROM products WHERE id = ?', [productId]);
+    const variants = await query('SELECT * FROM variants WHERE product_id = ? ORDER BY id', [productId]);
+    res.json({ ...rows[0], variants, totalQty: variants.reduce((s, v) => s + v.qty, 0) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -438,10 +523,12 @@ app.post('/api/master/import-from-store-a', async (req, res) => {
       supplierMax[sup] = (supplierMax[sup] || 0) + 1;
       const sku = `${year}${sup}${String(supplierMax[sup]).padStart(3, '0')}`;
       try {
-        await query(
+        const result = await query(
           `INSERT INTO products (sku, name, brand, supplier, sale_price, stock_type, image_url, naver_a_no) VALUES (?, ?, ?, ?, ?, 'sourcing', ?, ?)`,
           [sku, p.name, brand, sup, p.sale_price || 0, p.image_url || null, p.channel_product_no]
         );
+        // 기본 variant 생성 (옵션 없이 빈 옵션 1개)
+        await query('INSERT INTO variants (product_id, color, size, qty) VALUES (?, "", NULL, 0)', [result.insertId]);
         created++;
       } catch (e) {
         console.log(`[import] ${p.channel_product_no} 실패: ${e.message.slice(0, 100)}`);
