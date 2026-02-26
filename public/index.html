@@ -2265,6 +2265,7 @@
                         </select>
                         <button onclick="loadMasterProducts()" class="btn btn-accent" style="padding:8px 16px;font-size:13px;">검색</button>
                         <button onclick="toggleBulkMatch()" id="bulkMatchToggle" class="btn btn-outline" style="padding:8px 16px;font-size:13px;">일괄 매칭</button>
+                        <button onclick="importStoreAProducts()" id="importStoreABtn" class="btn btn-outline" style="padding:8px 16px;font-size:13px;">A스토어 일괄 등록</button>
                     </div>
                 </div>
 
@@ -5745,6 +5746,29 @@
         const bulkSearchEl = document.getElementById('bulkSearchKeyword');
         if (bulkSearchEl) bulkSearchEl.onkeydown = (e) => { if (e.key === 'Enter') bulkSearchStore(); };
     });
+
+    // --- A스토어 상품 일괄 등록 ---
+    async function importStoreAProducts() {
+        const btn = document.getElementById('importStoreABtn');
+        if (!confirm('A스토어 인덱싱된 상품 중 미등록 상품을 마스터DB에 일괄 등록합니다.\n(사입 상품으로 등록, 네이버A 자동 연결)\n\n진행하시겠습니까?')) return;
+
+        btn.disabled = true;
+        btn.textContent = '등록 중...';
+        try {
+            const result = await api('/api/master/import-from-store-a', { method: 'POST' });
+            const msg = `등록 완료: ${result.created}건 신규` +
+                (result.skipped ? ` · ${result.skipped}건 기존` : '') +
+                (result.failed ? ` · ${result.failed}건 실패` : '');
+            showToast(msg, result.created > 0 ? 'success' : 'info');
+            loadMasterStats();
+            loadMasterProducts(masterCurrentPage);
+        } catch (e) {
+            showToast('등록 실패: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'A스토어 일괄 등록';
+        }
+    }
 
     async function initCopyPage() {
         loadCopyHistory();

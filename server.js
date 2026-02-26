@@ -429,6 +429,79 @@ app.post('/api/master/products', async (req, res) => {
   }
 });
 
+// POST /api/master/import-from-store-a - A스토어 상품 일괄 등록
+app.post('/api/master/import-from-store-a', async (req, res) => {
+  try {
+    // 1. A스토어 인덱싱된 전체 상품
+    const storeProducts = await query('SELECT * FROM store_a_products ORDER BY name');
+    if (storeProducts.length === 0) {
+      return res.json({ created: 0, skipped: 0, message: '인덱싱된 A스토어 상품이 없습니다' });
+    }
+
+    // 2. 이미 naver_a로 연결된 channel_product_id 목록
+    const linkedRows = await query("SELECT channel_product_id FROM channel_products WHERE channel = 'naver_a'");
+    const linkedSet = new Set(linkedRows.map(r => r.channel_product_id));
+
+    // 3. 미연결 상품만 필터
+    const toImport = storeProducts.filter(p => !linkedSet.has(p.channel_product_no));
+    if (toImport.length === 0) {
+      return res.json({ created: 0, skipped: storeProducts.length, message: '모든 상품이 이미 등록되어 있습니다' });
+    }
+
+    // 4. 브랜드별 그룹핑 → SKU 일괄 생성
+    const year = new Date().getFullYear();
+    // 각 supplier별 현재 최대 번호 조회
+    const existingSkus = await query("SELECT sku FROM master_products WHERE sku LIKE ?", [`${year}%`]);
+    const supplierMax = {};
+    for (const row of existingSkus) {
+      const match = row.sku.match(/^(\d{4})([A-Z]+)(\d+)$/);
+      if (match) {
+        const sup = match[2];
+        const num = parseInt(match[3], 10);
+        supplierMax[sup] = Math.max(supplierMax[sup] || 0, num);
+      }
+    }
+
+    // 5. 일괄 INSERT
+    let created = 0;
+    for (const p of toImport) {
+      const brand = extractBrand(p.name);
+      const sup = (brand || 'ETC').toUpperCase();
+      supplierMax[sup] = (supplierMax[sup] || 0) + 1;
+      const sku = `${year}${sup}${String(supplierMax[sup]).padStart(3, '0')}`;
+
+      try {
+        const result = await query(
+          `INSERT INTO master_products (sku, name, brand, supplier, color, size, qty, stock_type, image_url) VALUES (?, ?, ?, ?, ?, ?, 0, 'sourcing', ?)`,
+          [sku, p.name, brand, sup, '', null, p.image_url || null]
+        );
+        // naver_a 채널 자동 연결
+        await query(
+          `INSERT INTO channel_products (master_id, channel, channel_product_id, channel_product_name, channel_price, match_type) VALUES (?, 'naver_a', ?, ?, ?, 'auto')
+           ON DUPLICATE KEY UPDATE master_id = VALUES(master_id)`,
+          [result.insertId, p.channel_product_no, p.name, p.sale_price || 0]
+        );
+        created++;
+      } catch (e) {
+        // SKU 중복 등 개별 오류 무시 (다음 상품 진행)
+        console.log(`[import] ${p.channel_product_no} 등록 실패: ${e.message.slice(0, 100)}`);
+      }
+    }
+
+    console.log(`[import] A스토어 → master_products: ${created}건 등록, ${toImport.length - created}건 실패, ${storeProducts.length - toImport.length}건 기존`);
+    res.json({
+      created,
+      skipped: storeProducts.length - toImport.length,
+      failed: toImport.length - created,
+      total: storeProducts.length,
+      message: `${created}건 등록 완료`,
+    });
+  } catch (e) {
+    console.error('[import] 오류:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- API Routes ---
 
 // GET /api/health - 헬스체크 (서버 keep-alive용)
