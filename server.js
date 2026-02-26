@@ -53,7 +53,8 @@ function extractProductInfo(v2Detail, channelProductNo) {
 async function checkForNewProducts() {
   await initSyncClients();
   const data = await scheduler.storeA.apiCall('POST', '/v1/products/search', { page: 1, size: 1 });
-  const apiTotal = data && data.totalElements || data && data.totalCount || 0;
+  const apiTotal = (data && (data.totalElements || data.totalCount)) || 0;
+  console.log(`[Index] v1 응답 키: ${data ? Object.keys(data).join(', ') : 'null'}, apiTotal: ${apiTotal}`);
   const dbRows = await query('SELECT COUNT(*) as cnt FROM store_a_products');
   const dbTotal = dbRows[0].cnt;
   return { apiTotal, dbTotal, hasNew: apiTotal > dbTotal };
@@ -1657,9 +1658,12 @@ app.post('/api/store-a/products/index-start', async (req, res) => {
   if (indexingActive) {
     return res.json({ message: '이미 인덱싱 중입니다.', indexing: true, progress: indexingProgress });
   }
-  // 백그라운드로 시작
-  runProductIndexing().catch(e => console.error('[Index] 오류:', e.message));
-  res.json({ message: '인덱싱을 시작했습니다.', indexing: true });
+  // DB가 비어있으면 fullRefresh=true로 전체 인덱싱
+  const dbRows = await query('SELECT COUNT(*) as cnt FROM store_a_products');
+  const dbCount = dbRows[0].cnt;
+  const fullRefresh = dbCount === 0;
+  runProductIndexing(fullRefresh).catch(e => console.error('[Index] 오류:', e.message));
+  res.json({ message: fullRefresh ? '전체 인덱싱을 시작했습니다.' : '증분 인덱싱을 시작했습니다.', indexing: true });
 });
 
 // POST /api/store-a/products/index-stop - 인덱싱 중지
