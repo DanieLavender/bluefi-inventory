@@ -225,60 +225,30 @@ class NaverCommerceClient {
    * @returns {Array} matching products
    */
   /**
-   * v1 상품 키워드 검색 (searchKeywordType 사용)
-   * 검색 결과의 channelProductNo 목록 반환
-   * @param {string} keyword - 검색어
-   * @returns {Array} v1 상품 객체 배열
+   * v1 상품 목록 API로 전체 channelProductNo 조회 (페이지네이션)
+   * @returns {Array} channelProductNo 문자열 배열
    */
-  async searchProductsByKeyword(keyword) {
-    const allProducts = [];
+  async getAllProductNumbers() {
+    const allNos = [];
     let page = 1;
     const size = 100;
 
     do {
-      let data;
-      try {
-        data = await this.apiCall('POST', '/v1/products/search', {
-          searchKeywordType: 'PRODUCT_NAME',
-          searchKeyword: keyword,
-          page,
-          size,
-        });
-      } catch (e) {
-        // PRODUCT_NAME이 지원 안 되면 키워드 없이 재시도
-        console.log(`[${this.storeName}] PRODUCT_NAME 검색 실패, 전체 조회 폴백:`, e.message.slice(0, 100));
-        data = await this.apiCall('POST', '/v1/products/search', { page, size });
-      }
-
+      const data = await this.apiCall('POST', '/v1/products/search', { page, size });
       if (!data || !data.contents || data.contents.length === 0) break;
 
-      // 첫 페이지: 응답 구조 로깅
-      if (page === 1) {
-        const p = data.contents[0];
-        console.log(`[${this.storeName}] v1 필드:`, Object.keys(p).join(', '));
-        const sample = {};
-        for (const [k, v] of Object.entries(p)) {
-          if (typeof v === 'string') sample[k] = v.slice(0, 100);
-          else if (typeof v === 'number') sample[k] = v;
-          else if (v && typeof v === 'object' && !Array.isArray(v)) sample[k] = '{' + Object.keys(v).join(',') + '}';
-          else if (Array.isArray(v)) sample[k] = `[${v.length}]`;
-        }
-        console.log(`[${this.storeName}] v1 샘플:`, JSON.stringify(sample).slice(0, 800));
-        console.log(`[${this.storeName}] v1 totalCount:`, data.totalElements || data.totalCount || data.total || '?');
-      }
-
       for (const p of data.contents) {
-        allProducts.push(p);
+        const cp = p.channelProducts && p.channelProducts[0];
+        const no = (cp && cp.channelProductNo) || p.originProductNo;
+        if (no) allNos.push(String(no));
       }
 
-      // 키워드 검색이면 2페이지 이상 불필요 (100개 충분)
-      if (keyword) break;
       if (data.contents.length < size) break;
       page++;
-      await this.sleep(300);
+      await this.sleep(500); // rate limit 방지
     } while (true);
 
-    return allProducts;
+    return allNos;
   }
 
   /**
