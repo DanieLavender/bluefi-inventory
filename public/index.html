@@ -2563,19 +2563,44 @@
 
     <!-- ===== Channel Link Modal (수동 매칭) ===== -->
     <div class="modal-overlay" id="linkModal">
-        <div class="modal" style="width:560px;max-height:85vh;display:flex;flex-direction:column;">
-            <h2 style="margin-bottom:4px;">A스토어 상품 연결</h2>
+        <div class="modal" style="width:600px;max-height:88vh;display:flex;flex-direction:column;">
+            <h2 style="margin-bottom:4px;">채널 상품 연결</h2>
             <p id="linkMasterInfo" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;"></p>
-            <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <input type="text" id="linkSearchInput" placeholder="A스토어 상품명 검색..."
+
+            <!-- 현재 연결 상태 -->
+            <div id="linkCurrentChannels" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;"></div>
+
+            <!-- 채널 선택 탭 -->
+            <div style="display:flex;gap:4px;margin-bottom:10px;">
+                <button onclick="setLinkChannel('naver_a')" id="linkTab_naver_a" class="btn btn-outline" style="padding:5px 12px;font-size:12px;font-weight:600;">네이버 A</button>
+                <button onclick="setLinkChannel('naver_b')" id="linkTab_naver_b" class="btn btn-outline" style="padding:5px 12px;font-size:12px;font-weight:600;">네이버 B</button>
+                <button onclick="setLinkChannel('coupang')" id="linkTab_coupang" class="btn btn-outline" style="padding:5px 12px;font-size:12px;font-weight:600;">쿠팡</button>
+                <button onclick="setLinkChannel('zigzag')" id="linkTab_zigzag" class="btn btn-outline" style="padding:5px 12px;font-size:12px;font-weight:600;">지그재그</button>
+            </div>
+
+            <!-- 검색 (네이버용) -->
+            <div id="linkSearchArea" style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" id="linkSearchInput" placeholder="상품명 검색..."
                     style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;">
                 <button onclick="searchForLink()" class="btn btn-accent" style="padding:8px 14px;font-size:13px;">검색</button>
             </div>
+
+            <!-- 직접 입력 (쿠팡/지그재그용) -->
+            <div id="linkManualArea" style="display:none;margin-bottom:10px;">
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="linkManualId" placeholder="채널 상품 ID 입력"
+                        style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;">
+                    <button onclick="linkManualProduct()" class="btn btn-accent" style="padding:8px 14px;font-size:13px;">연결</button>
+                </div>
+                <p style="font-size:11px;color:var(--text-tertiary);margin-top:4px;" id="linkManualHint"></p>
+            </div>
+
+            <!-- 검색 결과 -->
             <div id="linkSearchResults" style="flex:1;overflow-y:auto;min-height:200px;max-height:400px;border:1px solid var(--border);border-radius:var(--radius-sm);">
-                <p style="text-align:center;color:var(--text-tertiary);padding:40px 0;font-size:13px;">상품명 키워드로 검색하세요</p>
+                <p style="text-align:center;color:var(--text-tertiary);padding:40px 0;font-size:13px;">채널을 선택하고 검색하세요</p>
             </div>
             <div class="modal-actions" style="margin-top:12px;">
-                <button class="btn btn-outline" onclick="closeLinkModal()">취소</button>
+                <button class="btn btn-outline" onclick="closeLinkModal()">닫기</button>
             </div>
         </div>
     </div>
@@ -5206,35 +5231,92 @@
 
     // --- 수동 매칭 모달 ---
     let linkTargetMasterId = null;
+    let linkTargetItem = null;
+    let linkActiveChannel = 'naver_a';
+
+    const channelNames = { naver_a: '네이버 A', naver_b: '네이버 B', coupang: '쿠팡', zigzag: '지그재그' };
+    const allChannelKeys = ['naver_a', 'naver_b', 'coupang', 'zigzag'];
 
     async function openLinkModal(masterId) {
         linkTargetMasterId = masterId;
-        // 마스터 상품 정보 가져오기
         try {
-            const item = await api(`/api/master/products/${masterId}`);
+            linkTargetItem = await api(`/api/master/products/${masterId}`);
             document.getElementById('linkMasterInfo').textContent =
-                `${item.sku} · ${item.name} · ${item.color || ''}`;
-            // 상품명에서 키워드 자동 추출 (브랜드코드 제거 후 첫 2단어)
-            const words = (item.name || '').replace(/^[a-zA-Z]{2}\s/, '').split(/\s+/).filter(w => w.length > 1);
-            const suggest = words.slice(0, 2).join(' ');
-            document.getElementById('linkSearchInput').value = suggest;
+                `${linkTargetItem.sku} · ${linkTargetItem.name} · ${linkTargetItem.color || ''}`;
         } catch(e) {
+            linkTargetItem = null;
             document.getElementById('linkMasterInfo').textContent = `ID: ${masterId}`;
         }
-        document.getElementById('linkSearchResults').innerHTML =
-            '<p style="text-align:center;color:var(--text-tertiary);padding:40px 0;font-size:13px;">검색 버튼을 눌러주세요</p>';
+        renderCurrentChannels();
+        setLinkChannel('naver_a');
         document.getElementById('linkModal').classList.add('active');
         document.body.classList.add('modal-open');
-        // 자동 검색
-        searchForLink();
-        // 엔터키
         document.getElementById('linkSearchInput').onkeydown = (e) => { if (e.key === 'Enter') searchForLink(); };
+        document.getElementById('linkManualId').onkeydown = (e) => { if (e.key === 'Enter') linkManualProduct(); };
+    }
+
+    function renderCurrentChannels() {
+        const container = document.getElementById('linkCurrentChannels');
+        const channels = (linkTargetItem && linkTargetItem.channels) || [];
+        container.innerHTML = allChannelKeys.map(key => {
+            const l = channelLabels[key];
+            const linked = channels.find(c => c.channel === key);
+            if (linked) {
+                return `<div style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;background:${l.bg}11;border:1px solid ${l.bg}44;">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${l.bg};"></span>
+                    <span style="font-size:11px;font-weight:600;color:${l.bg};">${channelNames[key]}</span>
+                    <span style="font-size:10px;color:var(--text-tertiary);">#${linked.channel_product_id}</span>
+                    <span onclick="unlinkChannel(${linked.id}, '${key}')" style="cursor:pointer;font-size:12px;color:#999;margin-left:2px;" title="연결 해제">&times;</span>
+                </div>`;
+            } else {
+                return `<div style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;background:var(--bg-primary);border:1px dashed var(--border);">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ccc;"></span>
+                    <span style="font-size:11px;color:var(--text-tertiary);">${channelNames[key]}</span>
+                </div>`;
+            }
+        }).join('');
+    }
+
+    function setLinkChannel(channel) {
+        linkActiveChannel = channel;
+        // 탭 활성화
+        allChannelKeys.forEach(k => {
+            const tab = document.getElementById(`linkTab_${k}`);
+            if (tab) {
+                const l = channelLabels[k];
+                if (k === channel) {
+                    tab.style.background = l.bg; tab.style.color = l.color; tab.style.borderColor = l.bg;
+                } else {
+                    tab.style.background = ''; tab.style.color = ''; tab.style.borderColor = '';
+                }
+            }
+        });
+
+        const isSearch = (channel === 'naver_a' || channel === 'naver_b');
+        document.getElementById('linkSearchArea').style.display = isSearch ? 'flex' : 'none';
+        document.getElementById('linkManualArea').style.display = isSearch ? 'none' : 'block';
+        document.getElementById('linkSearchResults').style.display = isSearch ? 'block' : 'none';
+
+        if (isSearch) {
+            // 자동 키워드 추출
+            const name = (linkTargetItem && linkTargetItem.name) || '';
+            const words = name.replace(/^[a-zA-Z]{2}\s/, '').replace(/[\[\]]/g, '').split(/\s+/).filter(w => w.length > 1);
+            document.getElementById('linkSearchInput').value = words.slice(0, 2).join(' ');
+            document.getElementById('linkSearchResults').innerHTML =
+                '<p style="text-align:center;color:var(--text-tertiary);padding:40px 0;font-size:13px;">검색 버튼을 누르거나 Enter를 입력하세요</p>';
+            searchForLink();
+        } else {
+            document.getElementById('linkManualId').value = '';
+            const hints = { coupang: '쿠팡 vendorItemId를 입력하세요', zigzag: '지그재그 product_id를 입력하세요' };
+            document.getElementById('linkManualHint').textContent = hints[channel] || '';
+        }
     }
 
     function closeLinkModal() {
         document.getElementById('linkModal').classList.remove('active');
         document.body.classList.remove('modal-open');
         linkTargetMasterId = null;
+        linkTargetItem = null;
     }
 
     async function searchForLink() {
@@ -5253,7 +5335,8 @@
                 const price = p.sale_price ? p.sale_price.toLocaleString() + '원' : '';
                 const status = p.status_type === 'SALE' ? '<span style="color:#16A34A;">판매중</span>'
                     : p.status_type ? `<span style="color:#EA580C;">${p.status_type}</span>` : '';
-                return `<div onclick="linkProduct('${p.channel_product_no}', '${escapeHtml(p.name).replace(/'/g, "\\'")}', ${p.sale_price || 0})"
+                const safeName = escapeHtml(p.name).replace(/'/g, "\\'");
+                return `<div onclick="linkProduct('${p.channel_product_no}', '${safeName}', ${p.sale_price || 0})"
                     style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;"
                     onmouseover="this.style.background='var(--bg-primary)'" onmouseout="this.style.background=''">
                     <div style="font-size:13px;font-weight:500;margin-bottom:2px;">${escapeHtml(p.name)}</div>
@@ -5275,19 +5358,43 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    channel: 'naver_a',
+                    channel: linkActiveChannel,
                     channel_product_id: channelProductId,
                     channel_product_name: channelProductName,
                     channel_price: channelPrice,
                     match_type: 'manual',
                 }),
             });
-            showToast('A스토어 상품 연결 완료', 'success');
-            closeLinkModal();
+            showToast(`${channelNames[linkActiveChannel]} 상품 연결 완료`, 'success');
+            // 연결 후 상세 갱신
+            linkTargetItem = await api(`/api/master/products/${linkTargetMasterId}`);
+            renderCurrentChannels();
             loadMasterProducts(masterCurrentPage);
             loadMasterStats();
         } catch (e) {
             showToast('연결 실패: ' + e.message, 'error');
+        }
+    }
+
+    async function linkManualProduct() {
+        const id = document.getElementById('linkManualId').value.trim();
+        if (!id || !linkTargetMasterId) return;
+        await linkProduct(id, '', 0);
+        document.getElementById('linkManualId').value = '';
+    }
+
+    async function unlinkChannel(channelRecordId, channelKey) {
+        if (!linkTargetMasterId) return;
+        if (!confirm(`${channelNames[channelKey]} 연결을 해제하시겠습니까?`)) return;
+        try {
+            await api(`/api/master/products/${linkTargetMasterId}/link/${channelRecordId}`, { method: 'DELETE' });
+            showToast(`${channelNames[channelKey]} 연결 해제`, 'info');
+            linkTargetItem = await api(`/api/master/products/${linkTargetMasterId}`);
+            renderCurrentChannels();
+            loadMasterProducts(masterCurrentPage);
+            loadMasterStats();
+        } catch (e) {
+            showToast('해제 실패: ' + e.message, 'error');
         }
     }
 
@@ -5350,16 +5457,19 @@
 
         if (isMobile) {
             container.innerHTML = data.items.map(item => {
-                const channelBadges = (item.channels || []).map(ch => {
-                    const l = channelLabels[ch.channel] || { name: ch.channel, bg: '#666', color: '#fff' };
-                    return `<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;background:${l.bg};color:${l.color};margin-right:3px;">${l.name}</span>`;
+                const chMap = {};
+                (item.channels || []).forEach(ch => { chMap[ch.channel] = ch; });
+                const channelDots = allChannelKeys.map(key => {
+                    const l = channelLabels[key];
+                    const linked = chMap[key];
+                    return `<span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${linked ? l.bg : '#ddd'};line-height:16px;text-align:center;font-size:7px;font-weight:700;color:#fff;">${l.name.charAt(0)}</span>`;
                 }).join('');
                 const stockLabel = item.stock_type === 'inventory'
                     ? `<span style="color:#16A34A;font-weight:600;">${item.qty}개</span>`
                     : '<span style="color:#EA580C;font-size:11px;">사입</span>';
                 const salesQty = item.sales && item.sales.totalQty > 0
                     ? `<span style="font-size:11px;color:var(--accent);">판매 ${item.sales.totalQty}개</span>` : '';
-                return `<div style="padding:12px 0;border-bottom:1px solid var(--border);">
+                return `<div onclick="openLinkModal(${item.id})" style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;">
                     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:4px;">
                         <span style="font-size:11px;color:var(--text-tertiary);font-weight:600;">${item.sku}</span>
                         <div>${salesQty} ${stockLabel}</div>
@@ -5367,7 +5477,7 @@
                     <div style="font-size:13px;font-weight:500;margin-bottom:4px;">${escapeHtml(item.name)}</div>
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <span style="font-size:12px;color:var(--text-secondary);">${escapeHtml(item.color || '')}${item.supplier ? ` · ${item.supplier}` : ''}</span>
-                        <div>${channelBadges}<span onclick="openLinkModal(${item.id})" style="display:inline-block;padding:2px 5px;border-radius:4px;font-size:10px;color:var(--accent);cursor:pointer;border:1px dashed var(--accent);margin-left:2px;">+</span></div>
+                        <div style="display:flex;gap:2px;">${channelDots}</div>
                     </div>
                 </div>`;
             }).join('');
@@ -5386,9 +5496,14 @@
                         <th style="width:160px;">채널</th>
                     </tr></thead>
                     <tbody>${data.items.map(item => {
-                        const channelBadges = (item.channels || []).map(ch => {
-                            const l = channelLabels[ch.channel] || { name: ch.channel, bg: '#666', color: '#fff' };
-                            return `<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;background:${l.bg};color:${l.color};margin-right:3px;" title="${escapeHtml(ch.channel_product_name || ch.channel_product_id)}">${l.name}</span>`;
+                        const chMap = {};
+                        (item.channels || []).forEach(ch => { chMap[ch.channel] = ch; });
+                        const channelDots = allChannelKeys.map(key => {
+                            const l = channelLabels[key];
+                            const linked = chMap[key];
+                            const bg = linked ? l.bg : '#ddd';
+                            const title = linked ? `${channelNames[key]}: ${linked.channel_product_name || linked.channel_product_id}` : `${channelNames[key]}: 미연결`;
+                            return `<span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${bg};line-height:18px;text-align:center;font-size:8px;font-weight:700;color:#fff;cursor:default;" title="${escapeHtml(title)}">${l.name.charAt(0)}</span>`;
                         }).join('');
                         const stockLabel = item.stock_type === 'inventory'
                             ? `<span style="font-weight:600;">${item.qty}</span>`
@@ -5399,7 +5514,7 @@
                         const salesQty = item.sales && item.sales.totalQty > 0
                             ? `<span style="color:var(--accent);font-weight:600;">${item.sales.totalQty}</span>`
                             : '<span style="color:var(--text-tertiary);">-</span>';
-                        return `<tr>
+                        return `<tr style="cursor:pointer;" onclick="openLinkModal(${item.id})">
                             <td style="font-weight:600;color:var(--accent);font-size:12px;">${item.sku}</td>
                             <td>${escapeHtml(item.name)}</td>
                             <td>${escapeHtml(item.color || '')}</td>
@@ -5408,7 +5523,7 @@
                             <td style="text-align:center;">${stockLabel}</td>
                             <td style="text-align:center;">${salesQty}</td>
                             <td style="font-size:11px;color:var(--text-secondary);">${formatMasterDate(item.created_at)}</td>
-                            <td>${channelBadges}<span onclick="openLinkModal(${item.id})" style="display:inline-block;padding:2px 5px;border-radius:4px;font-size:10px;color:var(--accent);cursor:pointer;border:1px dashed var(--accent);margin-left:2px;" title="채널 연결">+</span></td>
+                            <td style="text-align:center;"><div style="display:flex;gap:3px;justify-content:center;">${channelDots}</div></td>
                         </tr>`;
                     }).join('')}</tbody>
                 </table>`;
