@@ -224,22 +224,67 @@ class NaverCommerceClient {
    * @param {string} keyword
    * @returns {Array} matching products
    */
-  async searchProducts(keyword) {
-    // 네이버 커머스 API: POST /v1/products/search (v1만 지원)
-    const body = {
-      searchKeyword: keyword || '',
-      page: 1,
-      size: 100,
-    };
+  /**
+   * v1 상품 목록 API로 전체 상품의 channelProductNo 목록 조회
+   * (v1은 키워드 검색을 지원하지 않음 — 목록 조회만 가능)
+   * @returns {Array} channelProductNo 문자열 배열
+   */
+  async getAllProductNumbers() {
+    const allNos = [];
+    let page = 1;
+    const size = 100;
 
-    const data = await this.apiCall(
-      'POST',
-      '/v1/products/search',
-      body
-    );
+    do {
+      const data = await this.apiCall('POST', '/v1/products/search', {
+        page,
+        size,
+      });
+      if (!data || !data.contents || data.contents.length === 0) break;
 
-    if (!data || !data.contents) return [];
-    return data.contents;
+      for (const p of data.contents) {
+        const no = p.channelProductNo
+          || (p.channelProducts && p.channelProducts[0] && p.channelProducts[0].channelProductNo)
+          || p.originProductNo;
+        if (no) allNos.push(String(no));
+      }
+
+      if (data.contents.length < size) break;
+      page++;
+      await this.sleep(200);
+    } while (true);
+
+    return allNos;
+  }
+
+  /**
+   * v2 채널 상품 상세를 병렬 배치 조회
+   * @param {string[]} channelProductNos
+   * @param {number} concurrency - 동시 요청 수 (기본 5)
+   * @param {function} onProgress - 진행 콜백 (loaded, total)
+   * @returns {Array} v2 상품 상세 배열
+   */
+  async getChannelProductsBatch(channelProductNos, concurrency = 5, onProgress = null) {
+    const results = [];
+
+    for (let i = 0; i < channelProductNos.length; i += concurrency) {
+      const batch = channelProductNos.slice(i, i + concurrency);
+      const settled = await Promise.allSettled(
+        batch.map(no => this.getChannelProduct(no))
+      );
+
+      for (let j = 0; j < settled.length; j++) {
+        if (settled[j].status === 'fulfilled' && settled[j].value) {
+          const detail = settled[j].value;
+          detail._channelProductNo = batch[j]; // 원본 번호 보존
+          results.push(detail);
+        }
+      }
+
+      if (onProgress) onProgress(Math.min(i + concurrency, channelProductNos.length), channelProductNos.length);
+      if (i + concurrency < channelProductNos.length) await this.sleep(150);
+    }
+
+    return results;
   }
 
   /**
