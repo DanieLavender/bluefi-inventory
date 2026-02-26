@@ -494,6 +494,8 @@ async function initDb() {
     ['sales_last_fetch_a', ''],
     ['sales_last_fetch_b', ''],
     ['store_b_name_prefix', '(오늘출발)'],
+    ['store_b_return_fee', ''],
+    ['store_b_exchange_fee', ''],
     ['sales_last_fetch_c', ''],
     ['coupang_access_key', ''],
     ['coupang_secret_key', ''],

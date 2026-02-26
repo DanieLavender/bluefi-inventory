@@ -512,6 +512,35 @@ class SyncScheduler {
     return null;
   }
 
+  /**
+   * 반품/교환 배송비 적용: B스토어 고정값 우선, 없으면 A스토어 원본 값
+   */
+  async applyClaimFees(copyData, sourceDelivery) {
+    if (!copyData.originProduct.deliveryInfo) return;
+    if (!copyData.originProduct.deliveryInfo.claimDeliveryInfo) {
+      copyData.originProduct.deliveryInfo.claimDeliveryInfo = {};
+    }
+    const dst = copyData.originProduct.deliveryInfo.claimDeliveryInfo;
+
+    const fixedReturn = await this.getConfig('store_b_return_fee');
+    const fixedExchange = await this.getConfig('store_b_exchange_fee');
+    const src = sourceDelivery?.claimDeliveryInfo || {};
+
+    // 반품 배송비: 고정값 > A스토어 원본
+    if (fixedReturn && fixedReturn !== '') {
+      dst.returnDeliveryFee = parseInt(fixedReturn, 10);
+    } else if (src.returnDeliveryFee != null) {
+      dst.returnDeliveryFee = src.returnDeliveryFee;
+    }
+
+    // 교환 배송비: 고정값 > A스토어 원본
+    if (fixedExchange && fixedExchange !== '') {
+      dst.exchangeDeliveryFee = parseInt(fixedExchange, 10);
+    } else if (src.exchangeDeliveryFee != null) {
+      dst.exchangeDeliveryFee = src.exchangeDeliveryFee;
+    }
+  }
+
   // === Copy product from Store A and create in Store B ===
 
   async copyAndCreateInStoreB(runId, detail, channelProductNo, productName, optionName, qty, productOrderId) {
@@ -566,17 +595,9 @@ class SyncScheduler {
       const storeBDelivery = await this.getStoreBDeliveryInfo(sourceDelivery);
       if (storeBDelivery) {
         copyData.originProduct.deliveryInfo = JSON.parse(JSON.stringify(storeBDelivery));
-        // A 스토어의 반품/교환 배송비를 B 상품에 반영 (캐시된 B 배송정보가 0일 수 있음)
-        if (sourceDelivery?.claimDeliveryInfo) {
-          if (!copyData.originProduct.deliveryInfo.claimDeliveryInfo) {
-            copyData.originProduct.deliveryInfo.claimDeliveryInfo = {};
-          }
-          const src = sourceDelivery.claimDeliveryInfo;
-          const dst = copyData.originProduct.deliveryInfo.claimDeliveryInfo;
-          if (src.returnDeliveryFee != null) dst.returnDeliveryFee = src.returnDeliveryFee;
-          if (src.exchangeDeliveryFee != null) dst.exchangeDeliveryFee = src.exchangeDeliveryFee;
-        }
       }
+      // 반품/교환 배송비: B스토어 고정값 우선, 없으면 A스토어 값 사용
+      await this.applyClaimFees(copyData, sourceDelivery);
 
       const created = await this.storeB.createProduct(copyData);
       console.log('[Sync] B 스토어 상품 생성 응답:', JSON.stringify(created).slice(0, 500));
@@ -706,16 +727,9 @@ class SyncScheduler {
     const storeBDelivery = await this.getStoreBDeliveryInfo(sourceDelivery);
     if (storeBDelivery) {
       copyData.originProduct.deliveryInfo = JSON.parse(JSON.stringify(storeBDelivery));
-      if (sourceDelivery?.claimDeliveryInfo) {
-        if (!copyData.originProduct.deliveryInfo.claimDeliveryInfo) {
-          copyData.originProduct.deliveryInfo.claimDeliveryInfo = {};
-        }
-        const src = sourceDelivery.claimDeliveryInfo;
-        const dst = copyData.originProduct.deliveryInfo.claimDeliveryInfo;
-        if (src.returnDeliveryFee != null) dst.returnDeliveryFee = src.returnDeliveryFee;
-        if (src.exchangeDeliveryFee != null) dst.exchangeDeliveryFee = src.exchangeDeliveryFee;
-      }
     }
+    // 반품/교환 배송비: B스토어 고정값 우선, 없으면 A스토어 값 사용
+    await this.applyClaimFees(copyData, sourceDelivery);
 
     const created = await this.storeB.createProduct(copyData);
     const newProductNo = created?.smartstoreChannelProductNo

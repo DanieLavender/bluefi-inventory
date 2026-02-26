@@ -2441,8 +2441,16 @@
                                 <label>상품명 접두어</label>
                                 <input type="text" id="storeBNamePrefix" placeholder="예: (오늘출발)" style="max-width:200px;">
                             </div>
+                            <div class="setting-row">
+                                <label>반품 배송비 (원)</label>
+                                <input type="number" id="storeBReturnFee" placeholder="비워두면 A스토어 값 사용" style="max-width:160px;">
+                            </div>
+                            <div class="setting-row">
+                                <label>교환 배송비 (원)</label>
+                                <input type="number" id="storeBExchangeFee" placeholder="비워두면 A스토어 값 사용" style="max-width:160px;">
+                            </div>
                             <div style="font-size:11px;color:var(--text-secondary);margin-top:6px;">
-                                반품 복사 시 B 스토어에 등록되는 상품의 초기 상태와 상품명 접두어를 설정합니다. 접두어를 비우면 원본 상품명 그대로 등록됩니다.
+                                B 스토어에 복사되는 상품의 초기 상태, 상품명 접두어, 반품/교환 배송비를 설정합니다. 배송비를 비워두면 A스토어 원본 값을 그대로 사용합니다.
                             </div>
                         </div>
 
@@ -4548,6 +4556,8 @@
             document.getElementById('storeBDisplayStatus').value = config.store_b_display_status || 'SUSPENSION';
             document.getElementById('storeBSaleStatus').value = config.store_b_sale_status || 'SALE';
             document.getElementById('storeBNamePrefix').value = config.store_b_name_prefix ?? '(오늘출발)';
+            document.getElementById('storeBReturnFee').value = config.store_b_return_fee || '';
+            document.getElementById('storeBExchangeFee').value = config.store_b_exchange_fee || '';
             // 쿠팡
             document.getElementById('coupangAccessKey').placeholder = config.coupang_access_key || 'Access Key 입력';
             document.getElementById('coupangVendorId').value = config.coupang_vendor_id || '';
@@ -4615,6 +4625,8 @@
         body.store_b_display_status = document.getElementById('storeBDisplayStatus').value;
         body.store_b_sale_status = document.getElementById('storeBSaleStatus').value;
         body.store_b_name_prefix = document.getElementById('storeBNamePrefix').value;
+        body.store_b_return_fee = document.getElementById('storeBReturnFee').value.trim();
+        body.store_b_exchange_fee = document.getElementById('storeBExchangeFee').value.trim();
         // 쿠팡
         const cAccessKey = document.getElementById('coupangAccessKey').value.trim();
         const cSecretKey = document.getElementById('coupangSecretKey').value.trim();
