@@ -1392,10 +1392,32 @@ app.get('/api/store-a/products/search', async (req, res) => {
 
     const results = await scheduler.storeA.searchProducts(keyword.trim());
 
+    // v1 API 응답 구조 디버그 (첫 번째 상품)
+    if (results.length > 0) {
+      console.log('[StoreA Search] 첫 상품 키:', Object.keys(results[0]).join(', '));
+      const p = results[0];
+      console.log('[StoreA Search] 샘플:', JSON.stringify({
+        originProductNo: p.originProductNo,
+        name: p.name,
+        productName: p.productName,
+        channelProductName: p.channelProductName,
+        salePrice: p.salePrice,
+        stockQuantity: p.stockQuantity,
+        statusType: p.statusType,
+        channelProducts: p.channelProducts ? p.channelProducts.length + '개' : 'N/A',
+        representativeImage: p.representativeImage ? 'O' : 'X',
+      }).slice(0, 500));
+    }
+
     // 각 상품에 기존 복사 매핑 정보 추가
     const items = [];
     for (const product of results) {
-      const channelProductNo = String(product.channelProductNo || product.id || '');
+      // v1 API: channelProductNo는 channelProducts[0].channelProductNo에 있을 수 있음
+      const firstChannel = product.channelProducts?.[0] || {};
+      const channelProductNo = String(
+        firstChannel.channelProductNo || product.channelProductNo || product.originProductNo || product.id || ''
+      );
+
       let mappings = [];
       if (channelProductNo) {
         mappings = await query(
@@ -1416,14 +1438,25 @@ app.get('/api/store-a/products/search', async (req, res) => {
         }
       }
 
+      // v1 API 필드 매핑: name, channelProductName, productName 등 여러 패턴 대응
+      const productName = product.name
+        || firstChannel.channelProductName
+        || product.channelProductName
+        || product.productName
+        || '';
+      const imgUrl = product.representativeImage?.url
+        || firstChannel.representativeImage?.url
+        || product.imageUrl
+        || '';
+
       items.push({
         channelProductNo,
-        originProductNo: product.originProductNo || '',
-        name: product.channelProductName || product.productName || '',
+        originProductNo: String(product.originProductNo || ''),
+        name: productName,
         salePrice: product.salePrice || 0,
-        stockQuantity: product.stockQuantity || 0,
-        statusType: product.statusType || product.channelProductDisplayStatusType || '',
-        representativeImage: product.representativeImage?.url || product.imageUrl || '',
+        stockQuantity: product.stockQuantity ?? 0,
+        statusType: product.statusType || firstChannel.channelProductDisplayStatusType || '',
+        representativeImage: imgUrl,
         channelMappings: mappings,
         storeBProductNo: storeBMapping,
       });
