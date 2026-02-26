@@ -14,8 +14,11 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- Store A 상품 검색 헬퍼 ---
-// v2 상세 응답에서 표시용 정보 추출
+// --- Store A 상품 인덱스 (DB 기반 즉시 검색) ---
+let indexingActive = false;
+let indexingProgress = { current: 0, total: 0, startedAt: null };
+
+// v2 상세 → DB 저장용 데이터 추출
 function extractProductInfo(v2Detail, channelProductNo) {
   const origin = v2Detail.originProduct || {};
   const channel = v2Detail.smartstoreChannelProduct || {};
@@ -23,7 +26,6 @@ function extractProductInfo(v2Detail, channelProductNo) {
   const name = channel.channelProductName || origin.name || '';
   const imgUrl = (origin.images && origin.images.representativeImage && origin.images.representativeImage.url) || '';
 
-  // 실제 판매가 (즉시할인 적용)
   let salePrice = origin.salePrice || 0;
   const discount = origin.customerBenefit
     && origin.customerBenefit.immediateDiscountPolicy
@@ -45,6 +47,62 @@ function extractProductInfo(v2Detail, channelProductNo) {
     imageUrl: imgUrl,
     statusType: origin.statusType || channel.channelProductDisplayStatusType || '',
   };
+}
+
+// 백그라운드 인덱싱: v1 목록 → v2 상세(1건/초) → DB 저장
+async function runProductIndexing() {
+  if (indexingActive) return;
+  indexingActive = true;
+  indexingProgress = { current: 0, total: 0, startedAt: new Date().toISOString() };
+
+  try {
+    await initSyncClients();
+
+    // Step 1: v1으로 전체 상품번호 수집
+    console.log('[Index] 상품번호 수집 시작...');
+    const allNos = await scheduler.storeA.getAllProductNumbers();
+    console.log(`[Index] 상품번호 ${allNos.length}개`);
+
+    // 이미 인덱싱된 상품 제외
+    const existingRows = await query('SELECT channel_product_no FROM store_a_products');
+    const existingSet = new Set(existingRows.map(r => r.channel_product_no));
+    const newNos = allNos.filter(no => !existingSet.has(no));
+    console.log(`[Index] 신규 ${newNos.length}개 (기존 ${existingSet.size}개)`);
+
+    indexingProgress.total = newNos.length;
+
+    // Step 2: 1건씩 v2 조회 → DB 저장 (1초 간격, rate limit 방지)
+    for (let i = 0; i < newNos.length; i++) {
+      if (!indexingActive) break; // 중지 요청 시
+
+      try {
+        const detail = await scheduler.storeA.getChannelProduct(newNos[i]);
+        const info = extractProductInfo(detail, newNos[i]);
+
+        await query(
+          `INSERT INTO store_a_products (channel_product_no, origin_product_no, name, sale_price, stock_quantity, status_type, image_url, indexed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE name=VALUES(name), sale_price=VALUES(sale_price), stock_quantity=VALUES(stock_quantity), status_type=VALUES(status_type), image_url=VALUES(image_url), indexed_at=NOW()`,
+          [info.channelProductNo, info.originProductNo, info.name, info.salePrice, info.stockQuantity, info.statusType, info.imageUrl]
+        );
+      } catch (e) {
+        console.log(`[Index] ${newNos[i]} 오류:`, e.message.slice(0, 80));
+      }
+
+      indexingProgress.current = i + 1;
+      if ((i + 1) % 100 === 0) {
+        console.log(`[Index] 진행: ${i + 1}/${newNos.length}`);
+      }
+
+      await new Promise(r => setTimeout(r, 1000)); // 1초 대기
+    }
+
+    console.log(`[Index] 완료: ${indexingProgress.current}건 인덱싱됨`);
+  } catch (e) {
+    console.error('[Index] 오류:', e.message);
+  } finally {
+    indexingActive = false;
+  }
 }
 
 // --- API Routes ---
@@ -1379,9 +1437,16 @@ app.post('/api/returns/confirm-pickup', async (req, res) => {
 });
 
 // GET /api/returns/confirmed - 실수거완료 리스트 (재고 추가 여부 포함)
+// ?finalized=true → 최종완료된 건만, ?finalized=false → 미완료 건만 (기본), 생략 → 전체
 app.get('/api/returns/confirmed', async (req, res) => {
   try {
-    const rows = await query('SELECT * FROM return_confirmations ORDER BY confirmed_at DESC');
+    const { finalized } = req.query;
+    let whereClause = '';
+    if (finalized === 'true') whereClause = ' WHERE finalized_at IS NOT NULL';
+    else if (finalized === 'false' || finalized === undefined) whereClause = ' WHERE finalized_at IS NULL';
+
+    const orderBy = finalized === 'true' ? ' ORDER BY finalized_at DESC' : ' ORDER BY confirmed_at DESC';
+    const rows = await query('SELECT * FROM return_confirmations' + whereClause + orderBy);
 
     // sync_log에서 처리 완료 여부 확인 (재고/스토어 분리)
     let inventoryIds = new Set();
@@ -1412,88 +1477,144 @@ app.get('/api/returns/confirmed', async (req, res) => {
   }
 });
 
+// POST /api/returns/finalize - 최종완료 처리 (단건/복수)
+app.post('/api/returns/finalize', async (req, res) => {
+  try {
+    const { productOrderIds } = req.body;
+    if (!productOrderIds || !Array.isArray(productOrderIds) || productOrderIds.length === 0) {
+      return res.status(400).json({ error: '최종완료할 항목을 선택해주세요.' });
+    }
+    const placeholders = productOrderIds.map(() => '?').join(',');
+    const result = await query(
+      `UPDATE return_confirmations SET finalized_at = NOW() WHERE product_order_id IN (${placeholders}) AND finalized_at IS NULL`,
+      productOrderIds
+    );
+    res.json({ success: true, finalized: result.affectedRows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/returns/unfinalize - 최종완료 취소 (복원)
+app.post('/api/returns/unfinalize', async (req, res) => {
+  try {
+    const { productOrderIds } = req.body;
+    if (!productOrderIds || !Array.isArray(productOrderIds) || productOrderIds.length === 0) {
+      return res.status(400).json({ error: '복원할 항목을 선택해주세요.' });
+    }
+    const placeholders = productOrderIds.map(() => '?').join(',');
+    const result = await query(
+      `UPDATE return_confirmations SET finalized_at = NULL WHERE product_order_id IN (${placeholders}) AND finalized_at IS NOT NULL`,
+      productOrderIds
+    );
+    res.json({ success: true, unfinalized: result.affectedRows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- Product Copy API ---
 
-// GET /api/store-a/products/search - A 스토어 상품 검색
-// 흐름: v1 키워드 검색 → channelProductNo 추출 → v2 상세 조회 (소수만)
+// GET /api/store-a/products/search - A 스토어 상품 검색 (DB 인덱스 기반 즉시 검색)
 app.get('/api/store-a/products/search', async (req, res) => {
   try {
-    await initSyncClients();
     const { keyword } = req.query;
     if (!keyword || keyword.trim().length === 0) {
       return res.status(400).json({ error: '검색 키워드를 입력해주세요.' });
     }
 
-    const startTime = Date.now();
+    // DB에서 인덱스된 상품 수 확인
+    const countRows = await query('SELECT COUNT(*) as cnt FROM store_a_products');
+    const indexedCount = countRows[0].cnt;
 
-    // Step 1: v1 API로 키워드 검색 (searchKeywordType: PRODUCT_NAME)
-    const v1Results = await scheduler.storeA.searchProductsByKeyword(keyword.trim());
-    console.log(`[StoreA Search] v1 검색 "${keyword.trim()}": ${v1Results.length}건`);
-
-    if (v1Results.length === 0) {
-      return res.json({ items: [], total: 0 });
+    if (indexedCount === 0) {
+      return res.json({
+        items: [],
+        total: 0,
+        indexStatus: { indexed: 0, indexing: indexingActive, progress: indexingProgress },
+        message: '상품 인덱스가 비어있습니다. "인덱싱 시작" 버튼을 눌러주세요.',
+      });
     }
 
-    // Step 2: channelProductNo 추출
-    const productNos = [];
-    for (const p of v1Results) {
-      const no = p.channelProductNo
-        || (p.channelProducts && p.channelProducts[0] && p.channelProducts[0].channelProductNo)
-        || p.originProductNo;
-      if (no) productNos.push(String(no));
-    }
+    // 키워드 공백 분리 → AND 조건 LIKE 검색
+    const keywords = keyword.trim().split(/\s+/);
+    const conditions = keywords.map(() => 'name LIKE ?');
+    const params = keywords.map(k => `%${k}%`);
 
-    // 최대 50개로 제한 (v2 호출 수 제한)
-    const limitedNos = productNos.slice(0, 50);
-    console.log(`[StoreA Search] v2 상세 조회: ${limitedNos.length}건`);
+    const rows = await query(
+      `SELECT * FROM store_a_products WHERE ${conditions.join(' AND ')} ORDER BY name LIMIT 100`,
+      params
+    );
 
-    // Step 3: v2 상세 조회 (2건씩 병렬, rate limit 방지)
+    // 매핑 정보 추가
     const items = [];
-    for (let i = 0; i < limitedNos.length; i += 2) {
-      const batch = limitedNos.slice(i, i + 2);
-      const results = await Promise.allSettled(
-        batch.map(no => scheduler.storeA.getChannelProduct(no))
-      );
-
-      for (let j = 0; j < results.length; j++) {
-        if (results[j].status === 'fulfilled' && results[j].value) {
-          const info = extractProductInfo(results[j].value, batch[j]);
-
-          // DB에서 매핑 정보 조회
-          let mappings = [];
-          let storeBMapping = null;
-          if (info.channelProductNo) {
-            mappings = await query(
-              'SELECT target_channel, target_product_id, copy_status FROM channel_product_mapping WHERE store_a_channel_product_no = ?',
-              [info.channelProductNo]
-            );
-            const pmRows = await query(
-              'SELECT store_b_channel_product_no FROM product_mapping WHERE store_a_channel_product_no = ? AND match_status = ? LIMIT 1',
-              [info.channelProductNo, 'matched']
-            );
-            if (pmRows.length > 0) storeBMapping = pmRows[0].store_b_channel_product_no;
-          }
-
-          items.push({
-            ...info,
-            representativeImage: info.imageUrl,
-            channelMappings: mappings,
-            storeBProductNo: storeBMapping,
-          });
-        }
+    for (const row of rows) {
+      let mappings = [];
+      let storeBMapping = null;
+      if (row.channel_product_no) {
+        mappings = await query(
+          'SELECT target_channel, target_product_id, copy_status FROM channel_product_mapping WHERE store_a_channel_product_no = ?',
+          [row.channel_product_no]
+        );
+        const pmRows = await query(
+          'SELECT store_b_channel_product_no FROM product_mapping WHERE store_a_channel_product_no = ? AND match_status = ? LIMIT 1',
+          [row.channel_product_no, 'matched']
+        );
+        if (pmRows.length > 0) storeBMapping = pmRows[0].store_b_channel_product_no;
       }
 
-      if (i + 2 < limitedNos.length) await new Promise(r => setTimeout(r, 300));
+      items.push({
+        channelProductNo: row.channel_product_no,
+        originProductNo: row.origin_product_no,
+        name: row.name,
+        salePrice: row.sale_price,
+        stockQuantity: row.stock_quantity,
+        statusType: row.status_type,
+        representativeImage: row.image_url,
+        channelMappings: mappings,
+        storeBProductNo: storeBMapping,
+      });
     }
 
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[StoreA Search] 완료: ${items.length}건 (${elapsed}초)`);
-
-    res.json({ items, total: items.length });
+    res.json({
+      items,
+      total: items.length,
+      indexStatus: { indexed: indexedCount, indexing: indexingActive, progress: indexingProgress },
+    });
   } catch (e) {
     console.error('[StoreA Search] 오류:', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// GET /api/store-a/products/index-status - 인덱스 상태
+app.get('/api/store-a/products/index-status', async (req, res) => {
+  try {
+    const countRows = await query('SELECT COUNT(*) as cnt FROM store_a_products');
+    res.json({
+      indexed: countRows[0].cnt,
+      indexing: indexingActive,
+      progress: indexingProgress,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/store-a/products/index-start - 인덱싱 시작
+app.post('/api/store-a/products/index-start', async (req, res) => {
+  if (indexingActive) {
+    return res.json({ message: '이미 인덱싱 중입니다.', indexing: true, progress: indexingProgress });
+  }
+  // 백그라운드로 시작
+  runProductIndexing().catch(e => console.error('[Index] 오류:', e.message));
+  res.json({ message: '인덱싱을 시작했습니다.', indexing: true });
+});
+
+// POST /api/store-a/products/index-stop - 인덱싱 중지
+app.post('/api/store-a/products/index-stop', (req, res) => {
+  indexingActive = false;
+  res.json({ message: '인덱싱을 중지합니다.' });
 });
 
 // GET /api/store-a/products/:id - A 스토어 상품 상세

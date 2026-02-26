@@ -525,6 +525,47 @@
         .confirmed-returns-empty {
             padding:24px; text-align:center; color:var(--text-muted); font-size:13px;
         }
+        /* 최종완료 버튼 */
+        .return-finalize-btn {
+            flex-shrink:0; margin-left:4px; padding:4px 10px; font-size:11px; font-weight:600;
+            color:white; background:#059669; border:1px solid #059669;
+            border-radius:var(--radius-sm); cursor:pointer; transition:all 0.15s; white-space:nowrap;
+        }
+        .return-finalize-btn:hover { background:#047857; border-color:#047857; }
+        /* 일괄 최종완료 버튼 */
+        .finalize-all-btn {
+            padding:4px 12px; font-size:11px; font-weight:600;
+            color:#059669; background:white; border:1px solid #059669;
+            border-radius:var(--radius-sm); cursor:pointer; transition:all 0.15s; white-space:nowrap;
+        }
+        .finalize-all-btn:hover { background:#ECFDF5; }
+        /* 완료 내역 탭 */
+        .confirmed-returns-tabs {
+            display:flex; border-bottom:1px solid var(--border); background:var(--bg-primary);
+        }
+        .confirmed-returns-tab {
+            flex:1; padding:8px 12px; font-size:12px; font-weight:600; text-align:center;
+            cursor:pointer; color:var(--text-muted); border-bottom:2px solid transparent;
+            transition:all 0.15s; background:none; border-top:none; border-left:none; border-right:none;
+        }
+        .confirmed-returns-tab.active {
+            color:var(--accent); border-bottom-color:var(--accent);
+        }
+        .confirmed-returns-tab:hover:not(.active) { color:var(--text-primary); background:#F3F4F6; }
+        /* 복원 버튼 */
+        .return-unfinalize-btn {
+            flex-shrink:0; margin-left:auto; padding:4px 10px; font-size:11px; font-weight:600;
+            color:#6B7280; background:white; border:1px solid var(--border);
+            border-radius:var(--radius-sm); cursor:pointer; transition:all 0.15s; white-space:nowrap;
+        }
+        .return-unfinalize-btn:hover { color:var(--accent); border-color:var(--accent); background:#EFF6FF; }
+        /* 최종완료 시간 */
+        .finalized-date { font-size:11px; color:#059669; white-space:nowrap; }
+        /* fadeOut 애니메이션 */
+        @keyframes fadeOutSlide {
+            to { opacity:0; max-height:0; padding-top:0; padding-bottom:0; margin:0; overflow:hidden; }
+        }
+        .return-item-fadeout { animation: fadeOutSlide 0.3s ease forwards; }
 
         @media (max-width: 768px) {
             .recent-returns-header { padding: 10px 12px; }
@@ -1839,10 +1880,22 @@
                         </div>
                     </div>
                     <div class="confirmed-returns-body" id="confirmedReturnsBody">
-                        <div class="confirmed-returns-empty" id="confirmedReturnsEmpty">
-                            실수거완료된 항목이 없습니다.
+                        <div class="confirmed-returns-tabs">
+                            <button class="confirmed-returns-tab active" id="tabPending" onclick="switchConfirmedTab('pending')">진행중</button>
+                            <button class="confirmed-returns-tab" id="tabFinalized" onclick="switchConfirmedTab('finalized')">완료 내역 <span id="finalizedCount" style="display:none;font-size:10px;color:#059669;margin-left:2px;"></span></button>
                         </div>
-                        <div class="recent-returns-list" id="confirmedReturnsList"></div>
+                        <div id="confirmedTabPending">
+                            <div class="confirmed-returns-empty" id="confirmedReturnsEmpty">
+                                실수거완료된 항목이 없습니다.
+                            </div>
+                            <div class="recent-returns-list" id="confirmedReturnsList"></div>
+                        </div>
+                        <div id="confirmedTabFinalized" style="display:none">
+                            <div class="confirmed-returns-empty" id="finalizedReturnsEmpty">
+                                완료 내역이 없습니다.
+                            </div>
+                            <div class="recent-returns-list" id="finalizedReturnsList"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -2061,6 +2114,26 @@
 
             <!-- ===== PAGE: Product Copy ===== -->
             <section class="page-section" id="page-copy" style="display:none">
+                <!-- 인덱스 상태 -->
+                <div class="shell-card" style="margin-bottom:16px;" id="indexStatusCard">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                        <div>
+                            <span style="font-size:13px;font-weight:600;">상품 인덱스</span>
+                            <span id="indexCount" style="font-size:13px;color:var(--text-secondary);margin-left:8px;">확인 중...</span>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-accent btn-sm" id="indexStartBtn" onclick="startIndexing()">인덱싱 시작</button>
+                            <button class="btn btn-outline btn-sm" id="indexStopBtn" onclick="stopIndexing()" style="display:none;">중지</button>
+                        </div>
+                    </div>
+                    <div id="indexProgressBar" style="display:none;margin-top:8px;">
+                        <div style="background:#E2E8F0;border-radius:4px;height:6px;overflow:hidden;">
+                            <div id="indexProgressFill" style="background:var(--accent);height:100%;width:0%;transition:width 0.3s;"></div>
+                        </div>
+                        <p id="indexProgressText" style="font-size:11px;color:var(--text-tertiary);margin-top:4px;"></p>
+                    </div>
+                </div>
+
                 <!-- 검색 영역 -->
                 <div class="shell-card" style="margin-bottom:16px;">
                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -2069,10 +2142,6 @@
                         <button class="btn btn-accent" onclick="searchStoreAProducts()">
                             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                             검색
-                        </button>
-                        <button class="btn btn-outline btn-sm" onclick="refreshStoreACache()" title="상품 목록 새로 가져오기"
-                            style="padding:6px 10px;">
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
                         </button>
                     </div>
                     <p id="copyCacheInfo" style="display:none;margin-top:8px;font-size:12px;color:var(--text-tertiary);"></p>
@@ -3764,6 +3833,7 @@
 
     // ===== 실수거완료 리스트 =====
     let _confirmedReturnsOpen = true;
+    let _confirmedTab = 'pending'; // 'pending' | 'finalized'
 
     function toggleConfirmedReturns() {
         _confirmedReturnsOpen = !_confirmedReturnsOpen;
@@ -3773,13 +3843,22 @@
         toggleBtn.classList.toggle('open', _confirmedReturnsOpen);
     }
 
+    function switchConfirmedTab(tab) {
+        _confirmedTab = tab;
+        document.getElementById('tabPending').classList.toggle('active', tab === 'pending');
+        document.getElementById('tabFinalized').classList.toggle('active', tab === 'finalized');
+        document.getElementById('confirmedTabPending').style.display = tab === 'pending' ? '' : 'none';
+        document.getElementById('confirmedTabFinalized').style.display = tab === 'finalized' ? '' : 'none';
+        if (tab === 'finalized') fetchFinalizedReturns();
+    }
+
     async function fetchConfirmedReturns() {
         const list = document.getElementById('confirmedReturnsList');
         const empty = document.getElementById('confirmedReturnsEmpty');
         const countBadge = document.getElementById('confirmedReturnsCount');
 
         try {
-            const items = await api('/api/returns/confirmed');
+            const items = await api('/api/returns/confirmed?finalized=false');
             window._confirmedReturnItems = items;
 
             if (!items || items.length === 0) {
@@ -3793,6 +3872,16 @@
             empty.style.display = 'none';
             countBadge.textContent = items.length;
             countBadge.style.display = items.length > 0 ? '' : 'none';
+
+            // 추가완료(alreadyAdded)된 건이 있으면 일괄 최종완료 버튼 표시
+            const addedItems = items.filter(i => i.alreadyAdded);
+            let headerHtml = '';
+            if (addedItems.length > 0) {
+                headerHtml = `<div style="padding:8px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:#F0FDF4;">
+                    <span style="font-size:12px;color:#059669;font-weight:600;">재고 반영 완료 ${addedItems.length}건</span>
+                    <button class="finalize-all-btn" onclick="finalizeAllAdded()">일괄 최종완료</button>
+                </div>`;
+            }
 
             let html = '';
             for (const item of items) {
@@ -3811,9 +3900,12 @@
 
                 const added = item.alreadyAdded;
                 const rowClass = added ? 'return-item-row return-item-added' : 'return-item-row';
-                const btnHtml = added
-                    ? '<span class="return-added-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>추가완료</span>'
-                    : `<button class="return-cancel-btn" onclick="cancelConfirmPickup('${item.product_order_id}', this)" title="실수거완료 취소">✕</button><button class="return-add-btn" onclick="addFromConfirmedReturn('${item.product_order_id}', this)">+ 추가</button>`;
+                let btnHtml;
+                if (added) {
+                    btnHtml = `<button class="return-finalize-btn" onclick="finalizeReturn('${item.product_order_id}', this)">최종완료</button>`;
+                } else {
+                    btnHtml = `<button class="return-cancel-btn" onclick="cancelConfirmPickup('${item.product_order_id}', this)" title="실수거완료 취소">✕</button><button class="return-add-btn" onclick="addFromConfirmedReturn('${item.product_order_id}', this)">+ 추가</button>`;
+                }
 
                 html += `<div class="${rowClass}" data-order-id="${item.product_order_id}">
                     <div class="return-item-info">
@@ -3827,12 +3919,162 @@
                 </div>`;
             }
 
-            list.innerHTML = html;
+            list.innerHTML = headerHtml + html;
+            // 완료 내역 카운트도 갱신
+            fetchFinalizedCount();
         } catch (e) {
             empty.style.display = 'block';
             empty.textContent = '실수거완료 목록 조회 실패: ' + e.message;
             list.innerHTML = '';
             countBadge.style.display = 'none';
+        }
+    }
+
+    // 최종완료 처리 (단건)
+    async function finalizeReturn(productOrderId, btnEl) {
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '처리중...'; }
+        try {
+            await api('/api/returns/finalize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productOrderIds: [productOrderId] })
+            });
+            // fadeOut 후 제거
+            const row = btnEl ? btnEl.closest('.return-item-row') : document.querySelector(`.return-item-row[data-order-id="${productOrderId}"]`);
+            if (row) {
+                row.classList.add('return-item-fadeout');
+                row.addEventListener('animationend', () => {
+                    row.remove();
+                    // 카운트 갱신
+                    const countBadge = document.getElementById('confirmedReturnsCount');
+                    const remaining = document.querySelectorAll('#confirmedReturnsList .return-item-row').length;
+                    if (remaining === 0) {
+                        document.getElementById('confirmedReturnsEmpty').style.display = 'block';
+                        countBadge.style.display = 'none';
+                        // 일괄 최종완료 바도 제거
+                        const bar = document.querySelector('#confirmedReturnsList > div:first-child');
+                        if (bar && bar.querySelector('.finalize-all-btn')) bar.remove();
+                    } else {
+                        countBadge.textContent = remaining;
+                    }
+                });
+            }
+            showToast('최종완료 처리되었습니다.', 'success');
+            fetchFinalizedCount();
+        } catch (e) {
+            showToast('최종완료 실패: ' + e.message, 'error');
+            if (btnEl) { btnEl.disabled = false; btnEl.textContent = '최종완료'; }
+        }
+    }
+
+    // 일괄 최종완료 (추가완료된 건 전부)
+    async function finalizeAllAdded() {
+        const items = window._confirmedReturnItems || [];
+        const ids = items.filter(i => i.alreadyAdded).map(i => i.product_order_id);
+        if (ids.length === 0) return;
+        if (!confirm(`추가완료된 ${ids.length}건을 최종완료 처리하시겠습니까?`)) return;
+        try {
+            await api('/api/returns/finalize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productOrderIds: ids })
+            });
+            showToast(`${ids.length}건 최종완료 처리되었습니다.`, 'success');
+            fetchConfirmedReturns();
+        } catch (e) {
+            showToast('일괄 최종완료 실패: ' + e.message, 'error');
+        }
+    }
+
+    // 완료 내역 카운트만 가져오기
+    async function fetchFinalizedCount() {
+        try {
+            const items = await api('/api/returns/confirmed?finalized=true');
+            const badge = document.getElementById('finalizedCount');
+            if (items && items.length > 0) {
+                badge.textContent = items.length;
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // 완료 내역 리스트 로드
+    async function fetchFinalizedReturns() {
+        const list = document.getElementById('finalizedReturnsList');
+        const empty = document.getElementById('finalizedReturnsEmpty');
+
+        try {
+            const items = await api('/api/returns/confirmed?finalized=true');
+            if (!items || items.length === 0) {
+                list.innerHTML = '';
+                empty.style.display = 'block';
+                empty.textContent = '완료 내역이 없습니다.';
+                return;
+            }
+
+            empty.style.display = 'none';
+            let html = '';
+            for (const item of items) {
+                const brand = item.brand || extractBrandFromName(item.product_name || '').brand;
+                const brandClass = brand ? (brandColors[brand] ? `brand-${brand}` : 'brand-default') : '';
+                const brandBadge = brand ? `<span class="brand-badge ${brandClass}" style="font-size:10px;padding:1px 5px;">${brand}</span>` : '';
+                const storeBadge = item.store === 'C'
+                    ? '<span class="store-badge store-coupang">쿠팡</span>'
+                    : item.store === 'D'
+                    ? '<span class="store-badge store-zigzag">지그재그</span>'
+                    : '<span class="store-badge store-naver">네이버</span>';
+                const { color, size } = parseProductOption(item.option_name);
+                const colorText = color || '(옵션없음)';
+                const sizeText = size ? ` · ${size}` : '';
+                const finalizedStr = item.finalized_at ? new Date(item.finalized_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+                html += `<div class="return-item-row return-item-added" data-order-id="${item.product_order_id}">
+                    <div class="return-item-info">
+                        ${storeBadge}${brandBadge}
+                        <span class="return-item-name">${escapeHtml(item.product_name || '')}</span>
+                        <span class="return-item-option">${escapeHtml(colorText)}${escapeHtml(sizeText)}</span>
+                        <span class="return-item-qty">${item.qty || 1}개</span>
+                        <span class="finalized-date">${finalizedStr}</span>
+                    </div>
+                    <button class="return-unfinalize-btn" onclick="unfinalizeReturn('${item.product_order_id}', this)">복원</button>
+                </div>`;
+            }
+
+            list.innerHTML = html;
+        } catch (e) {
+            empty.style.display = 'block';
+            empty.textContent = '완료 내역 조회 실패: ' + e.message;
+            list.innerHTML = '';
+        }
+    }
+
+    // 최종완료 취소 (복원)
+    async function unfinalizeReturn(productOrderId, btnEl) {
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '처리중...'; }
+        try {
+            await api('/api/returns/unfinalize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ productOrderIds: [productOrderId] })
+            });
+            // fadeOut 후 제거
+            const row = btnEl ? btnEl.closest('.return-item-row') : null;
+            if (row) {
+                row.classList.add('return-item-fadeout');
+                row.addEventListener('animationend', () => {
+                    row.remove();
+                    if (document.querySelectorAll('#finalizedReturnsList .return-item-row').length === 0) {
+                        document.getElementById('finalizedReturnsEmpty').style.display = 'block';
+                    }
+                });
+            }
+            showToast('진행중으로 복원되었습니다.', 'success');
+            fetchConfirmedReturns();
+        } catch (e) {
+            showToast('복원 실패: ' + e.message, 'error');
+            if (btnEl) { btnEl.disabled = false; btnEl.textContent = '복원'; }
         }
     }
 
@@ -4783,14 +5025,64 @@
     let copySearchResults = [];
     let copySelectedIds = new Set();
 
-    function refreshStoreACache() {
-        // 캐시 없이 직접 검색 방식 — 새로고침 = 재검색
-        searchStoreAProducts();
+    // 인덱싱 상태 확인 + UI 업데이트
+    async function checkIndexStatus() {
+        try {
+            const st = await api('/api/store-a/products/index-status');
+            const countEl = document.getElementById('indexCount');
+            const startBtn = document.getElementById('indexStartBtn');
+            const stopBtn = document.getElementById('indexStopBtn');
+            const progressBar = document.getElementById('indexProgressBar');
+
+            if (countEl) countEl.textContent = `${st.indexed}개 인덱싱됨`;
+            if (startBtn) startBtn.style.display = st.indexing ? 'none' : '';
+            if (stopBtn) stopBtn.style.display = st.indexing ? '' : 'none';
+
+            if (st.indexing && st.progress && progressBar) {
+                progressBar.style.display = 'block';
+                const pct = st.progress.total > 0 ? Math.round((st.progress.current / st.progress.total) * 100) : 0;
+                document.getElementById('indexProgressFill').style.width = pct + '%';
+                document.getElementById('indexProgressText').textContent =
+                    `${st.progress.current} / ${st.progress.total} (${pct}%)`;
+            } else if (progressBar) {
+                progressBar.style.display = 'none';
+            }
+
+            return st;
+        } catch (e) { return null; }
+    }
+
+    async function startIndexing() {
+        try {
+            await api('/api/store-a/products/index-start', { method: 'POST' });
+            showToast('상품 인덱싱을 시작했습니다. 백그라운드에서 진행됩니다.', 'info');
+            // 진행 상황 폴링
+            const poll = setInterval(async () => {
+                const st = await checkIndexStatus();
+                if (!st || !st.indexing) {
+                    clearInterval(poll);
+                    showToast(`인덱싱 완료: ${st ? st.indexed : '?'}개`, 'success');
+                }
+            }, 5000);
+        } catch (e) {
+            showToast('인덱싱 시작 실패: ' + e.message, 'error');
+        }
+    }
+
+    async function stopIndexing() {
+        try {
+            await api('/api/store-a/products/index-stop', { method: 'POST' });
+            showToast('인덱싱을 중지합니다.', 'info');
+            setTimeout(checkIndexStatus, 2000);
+        } catch (e) {
+            showToast('중지 실패: ' + e.message, 'error');
+        }
     }
 
     function initCopyPage() {
         loadCopyHistory();
         updateCopySelectedCount();
+        checkIndexStatus();
     }
 
     async function searchStoreAProducts() {
@@ -4803,7 +5095,7 @@
         const container = document.getElementById('copySearchResults');
         container.innerHTML = '<div style="text-align:center;padding:40px;">'
             + '<div class="spinner" style="margin:0 auto;"></div>'
-            + '<p style="margin-top:12px;color:var(--text-secondary);font-size:13px;">A 스토어에서 검색 중...</p>'
+            + '<p style="margin-top:12px;color:var(--text-secondary);font-size:13px;">검색 중...</p>'
             + '</div>';
 
         try {
@@ -4811,11 +5103,23 @@
             copySearchResults = data.items || [];
             copySelectedIds.clear();
 
+            // 인덱스 상태 메시지
             const infoEl = document.getElementById('copyCacheInfo');
-            if (infoEl) {
-                infoEl.textContent = `검색 결과: ${copySearchResults.length}건`;
-                infoEl.style.display = copySearchResults.length > 0 ? 'block' : 'none';
+            if (infoEl && data.indexStatus) {
+                const st = data.indexStatus;
+                if (st.indexed === 0) {
+                    infoEl.textContent = '상품 인덱스가 비어있습니다. 위의 "인덱싱 시작" 버튼을 눌러주세요.';
+                    infoEl.style.display = 'block';
+                    infoEl.style.color = '#E53E3E';
+                } else {
+                    infoEl.textContent = `검색 결과: ${copySearchResults.length}건 (인덱스: ${st.indexed}개)`;
+                    infoEl.style.display = 'block';
+                    infoEl.style.color = 'var(--text-tertiary)';
+                }
             }
+
+            // 인덱스 상태도 갱신
+            checkIndexStatus();
 
             renderCopySearchResults();
             updateCopySelectedCount();

@@ -134,6 +134,11 @@ async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
+  // return_confirmations에 finalized_at 컬럼 추가 (1회성 마이그레이션)
+  await query(
+    "ALTER TABLE return_confirmations ADD COLUMN finalized_at DATETIME DEFAULT NULL"
+  ).catch(() => {}); // 이미 존재하면 무시
+
   // 기존 UTC 저장 order_date를 KST로 마이그레이션 (1회성)
   const [migrated] = await getPool().query(
     "SELECT value FROM sync_config WHERE `key` = 'sales_tz_migrated'"
@@ -178,6 +183,20 @@ async function initDb() {
     ).catch(() => {});
     console.log(`[DB] 쿠팡 금액 0 레코드 삭제: ${delResult.affectedRows || 0}건, last_fetch 리셋`);
   }
+
+  // A 스토어 상품 인덱스 (로컬 DB 캐시 → 즉시 검색)
+  await query(`
+    CREATE TABLE IF NOT EXISTS store_a_products (
+      channel_product_no VARCHAR(255) PRIMARY KEY,
+      origin_product_no VARCHAR(255),
+      name VARCHAR(500) DEFAULT '',
+      sale_price INT DEFAULT 0,
+      stock_quantity INT DEFAULT 0,
+      status_type VARCHAR(50) DEFAULT '',
+      image_url TEXT,
+      indexed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
 
   // 멀티채널 상품 복사 매핑 테이블
   await query(`
