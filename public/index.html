@@ -4215,12 +4215,15 @@
                 const sizeText = size ? ` · ${size}` : '';
                 const finalizedStr = item.finalized_at ? new Date(item.finalized_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
+                const buyerName = item.orderer_name ? `<span class="return-item-buyer">${escapeHtml(item.orderer_name)}</span>` : '';
+
                 html += `<div class="return-item-row return-item-added" data-order-id="${item.product_order_id}">
                     <div class="return-item-info">
                         ${storeBadge}${brandBadge}
                         <span class="return-item-name">${escapeHtml(item.product_name || '')}</span>
                         <span class="return-item-option">${escapeHtml(colorText)}${escapeHtml(sizeText)}</span>
                         <span class="return-item-qty">${item.qty || 1}개</span>
+                        ${buyerName}
                         <span class="finalized-date">${finalizedStr}</span>
                     </div>
                     <button class="return-unfinalize-btn" onclick="unfinalizeReturn('${item.product_order_id}', this)">복원</button>
