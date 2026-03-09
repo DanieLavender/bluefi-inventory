@@ -3929,6 +3929,7 @@
                         optionName: item.optionName,
                         qty: item.qty,
                         channelProductNo: item.channelProductNo,
+                        ordererName: item.ordererName,
                     }]
                 })
             });
@@ -4088,12 +4089,15 @@
                     btnHtml = `<button class="return-cancel-btn" onclick="cancelConfirmPickup('${item.product_order_id}', this)" title="실수거완료 취소">✕</button><button class="return-add-btn" onclick="addFromConfirmedReturn('${item.product_order_id}', this)">+ 추가</button>`;
                 }
 
+                const buyerName = item.orderer_name ? `<span class="return-item-buyer">${escapeHtml(item.orderer_name)}</span>` : '';
+
                 html += `<div class="${rowClass}" data-order-id="${item.product_order_id}">
                     <div class="return-item-info">
                         ${storeBadge}${brandBadge}
                         <span class="return-item-name">${escapeHtml(item.product_name || '')}</span>
                         <span class="return-item-option">${escapeHtml(colorText)}${escapeHtml(sizeText)}</span>
                         <span class="return-item-qty">${item.qty || 1}개</span>
+                        ${buyerName}
                         <span class="return-item-date">${dateStr}</span>
                     </div>
                     ${btnHtml}

@@ -139,6 +139,11 @@ async function initDb() {
     "ALTER TABLE return_confirmations ADD COLUMN finalized_at DATETIME DEFAULT NULL"
   ).catch(() => {}); // 이미 존재하면 무시
 
+  // return_confirmations에 orderer_name 컬럼 추가 (1회성 마이그레이션)
+  await query(
+    "ALTER TABLE return_confirmations ADD COLUMN orderer_name VARCHAR(255) DEFAULT NULL"
+  ).catch(() => {}); // 이미 존재하면 무시
+
   // 기존 UTC 저장 order_date를 KST로 마이그레이션 (1회성)
   const [migrated] = await getPool().query(
     "SELECT value FROM sync_config WHERE `key` = 'sales_tz_migrated'"

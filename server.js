@@ -1858,10 +1858,10 @@ app.post('/api/returns/confirm-pickup', async (req, res) => {
       if (!item.productOrderId) continue;
       try {
         const result = await query(
-          `INSERT IGNORE INTO return_confirmations (product_order_id, store, product_name, option_name, qty, channel_product_no)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT IGNORE INTO return_confirmations (product_order_id, store, product_name, option_name, qty, channel_product_no, orderer_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [item.productOrderId, item.store || 'A', item.productName || null,
-           item.optionName || null, item.qty || 1, item.channelProductNo || null]
+           item.optionName || null, item.qty || 1, item.channelProductNo || null, item.ordererName || null]
         );
         if (result.affectedRows > 0) confirmed++;
         else skipped++;
