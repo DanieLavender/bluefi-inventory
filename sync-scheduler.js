@@ -466,10 +466,11 @@ class SyncScheduler {
     if (this.storeBDeliveryInfo) return this.storeBDeliveryInfo;
 
     try {
+      // B스토어 기존 상품에서 배송정보 참조 (v1 리스트 → v2 상세)
       try {
-        const results = await this.storeB.searchProducts('');
-        if (results && results.length > 0) {
-          const productNo = results[0].channelProductNo || results[0].id;
+        const allProducts = await this.storeB.getAllProductsFromList();
+        if (allProducts && allProducts.length > 0) {
+          const productNo = allProducts[0].channelProductNo;
           if (productNo) {
             const product = await this.storeB.getChannelProduct(String(productNo));
             if (product?.originProduct?.deliveryInfo) {
@@ -480,7 +481,7 @@ class SyncScheduler {
           }
         }
       } catch (e) {
-        console.log('[Sync] B 스토어 상품 검색 실패:', e.message);
+        console.log('[Sync] B 스토어 상품 조회 실패:', e.message);
       }
 
       try {
@@ -557,6 +558,11 @@ class SyncScheduler {
     } else if (src.exchangeDeliveryFee != null) {
       dst.exchangeDeliveryFee = src.exchangeDeliveryFee;
     }
+
+    // 반품/교환택배사: 없으면 A스토어 값 또는 기본값 설정
+    if (!dst.returnDeliveryCompany) {
+      dst.returnDeliveryCompany = src.returnDeliveryCompany || 'CJGLS';
+    }
   }
 
   // === Copy product from Store A and create in Store B ===
@@ -614,6 +620,15 @@ class SyncScheduler {
       if (storeBDelivery) {
         copyData.originProduct.deliveryInfo = JSON.parse(JSON.stringify(storeBDelivery));
       }
+
+      // "오늘출발" 배송 타입 → 일반 배송으로 변경 (B스토어에서 오늘출발 미지원 시 에러 방지)
+      const deliveryInfo = copyData.originProduct.deliveryInfo;
+      if (deliveryInfo && deliveryInfo.deliveryAttributeType === 'TODAY') {
+        deliveryInfo.deliveryAttributeType = 'NORMAL';
+        delete deliveryInfo.todayStockQuantity;
+        console.log(`[Sync] 오늘출발 → 일반배송 변경: ${productName}`);
+      }
+
       // 반품/교환 배송비: B스토어 고정값 우선, 없으면 A스토어 값 사용
       await this.applyClaimFees(copyData, sourceDelivery);
 
