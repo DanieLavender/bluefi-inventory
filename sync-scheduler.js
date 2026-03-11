@@ -212,6 +212,18 @@ class SyncScheduler {
     const productOrderId = detail.productOrderId || detail.productOrder?.productOrderId || '';
     const channelProductNo = this.extractChannelProductNo(detail);
 
+    // 중복 처리 방지: 이미 B스토어에 복사/수량증가 성공한 건이면 스킵
+    if (productOrderId) {
+      const dupCheck = await query(
+        "SELECT id FROM sync_log WHERE product_order_id = ? AND type IN ('product_create', 'qty_increase') AND status = 'success' LIMIT 1",
+        [productOrderId]
+      );
+      if (dupCheck.length > 0) {
+        console.log(`[Sync] 이미 처리된 주문, 스킵: ${productOrderId} (${productName})`);
+        return;
+      }
+    }
+
     const safeOptionName = optionName || '';
     const rows = await query(
       'SELECT * FROM product_mapping WHERE store_a_channel_product_no = ? AND store_a_option_name = ?',
