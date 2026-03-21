@@ -2372,8 +2372,8 @@
                             <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">상품명 *</label>
                             <input type="text" id="bulkProductName" class="form-input" placeholder="예: hm 캐시미어 울 라운드니트 아이보리 블랙"
                                 onkeydown="if(event.key==='Enter'){event.preventDefault();addToBulkQueue();}"
-                                oninput="autoDetectColors()"
-                                onblur="autoDetectColors()">
+                                oninput="autoDetectColors();updateSkuPreview()"
+                                onblur="autoDetectColors();updateSkuPreview()">
                         </div>
                         <div style="margin-top:8px;">
                             <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">
@@ -2384,6 +2384,22 @@
                             </div>
                         </div>
                         <div style="display:flex;gap:8px;margin-top:8px;">
+                            <div style="flex:0 0 200px;">
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">카테고리</label>
+                                <div style="position:relative;">
+                                    <input type="text" id="bulkCategorySearch" class="form-input" placeholder="카테고리 검색..."
+                                        onclick="openCategoryPicker()" oninput="searchCategories(this.value)"
+                                        style="padding-right:24px;">
+                                    <input type="hidden" id="bulkProductCategory" value="50021299">
+                                    <div id="bulkCategoryDisplay" style="font-size:11px;color:var(--accent);margin-top:2px;">니트 > 풀오버</div>
+                                    <div id="bulkCategoryDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;max-height:250px;overflow-y:auto;font-size:12px;">
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="flex:0 0 130px;">
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">품번 <span id="bulkSkuAuto" style="font-size:10px;color:var(--accent);">자동</span></label>
+                                <input type="text" id="bulkProductSku" class="form-input" placeholder="자동생성" style="font-family:monospace;">
+                            </div>
                             <div style="flex:1;">
                                 <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">판매가 (빈칸이면 기본값)</label>
                                 <input type="number" id="bulkProductPrice" class="form-input" placeholder="기본값 사용">
@@ -6339,6 +6355,133 @@
         });
     }
 
+    // 카테고리 선택기
+    let categoryPickerOpen = false;
+
+    async function openCategoryPicker() {
+        const dropdown = document.getElementById('bulkCategoryDropdown');
+        if (categoryPickerOpen) { dropdown.style.display = 'none'; categoryPickerOpen = false; return; }
+        categoryPickerOpen = true;
+        dropdown.style.display = '';
+        dropdown.innerHTML = '<div style="padding:8px;color:var(--text-tertiary);text-align:center;">로딩 중...</div>';
+        try {
+            const cats = await api('/api/bulk/categories');
+            renderCategoryList(cats, dropdown);
+        } catch(e) {
+            dropdown.innerHTML = '<div style="padding:8px;color:#DC2626;">카테고리 조회 실패 (API 키 필요)</div>';
+        }
+    }
+
+    function renderCategoryList(cats, container) {
+        container.innerHTML = cats.map(c =>
+            `<div style="padding:6px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-light);"
+                onmouseover="this.style.background='#F3F4F6'" onmouseout="this.style.background=''"
+                onclick="${c.hasChildren ? `event.stopPropagation();loadSubCategories('${c.id}','${c.name}')` : `selectCategory('${c.id}','${c.name}')`}">
+                <span>${c.name}</span>
+                ${c.hasChildren ? '<span style="color:var(--text-tertiary);">›</span>' : ''}
+            </div>`
+        ).join('');
+    }
+
+    async function loadSubCategories(parentId, parentName) {
+        const dropdown = document.getElementById('bulkCategoryDropdown');
+        dropdown.innerHTML = '<div style="padding:8px;color:var(--text-tertiary);text-align:center;">로딩 중...</div>';
+        try {
+            const subs = await api('/api/bulk/categories?parentId=' + parentId);
+            // 뒤로가기 버튼 + 하위 카테고리
+            dropdown.innerHTML = `<div style="padding:6px 12px;cursor:pointer;color:var(--accent);border-bottom:1px solid var(--border);font-weight:500;"
+                onmouseover="this.style.background='#F3F4F6'" onmouseout="this.style.background=''"
+                onclick="event.stopPropagation();openCategoryPicker();categoryPickerOpen=false;openCategoryPicker();">
+                ‹ 뒤로
+            </div>` + subs.map(c =>
+                `<div style="padding:6px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-light);"
+                    onmouseover="this.style.background='#F3F4F6'" onmouseout="this.style.background=''"
+                    onclick="${c.hasChildren ? `event.stopPropagation();loadSubCategories('${c.id}','${parentName}>${c.name}')` : `selectCategory('${c.id}','${parentName}>${c.name}')`}">
+                    <span>${c.name}</span>
+                    ${c.hasChildren ? '<span style="color:var(--text-tertiary);">›</span>' : ''}
+                </div>`
+            ).join('');
+        } catch(e) {
+            dropdown.innerHTML = '<div style="padding:8px;color:#DC2626;">조회 실패</div>';
+        }
+    }
+
+    let searchTimeout = null;
+    async function searchCategories(keyword) {
+        clearTimeout(searchTimeout);
+        if (!keyword || keyword.length < 2) return;
+        searchTimeout = setTimeout(async () => {
+            const dropdown = document.getElementById('bulkCategoryDropdown');
+            dropdown.style.display = '';
+            categoryPickerOpen = true;
+            try {
+                const results = await api('/api/bulk/categories/search?keyword=' + encodeURIComponent(keyword));
+                if (results.length === 0) {
+                    dropdown.innerHTML = '<div style="padding:8px;color:var(--text-tertiary);text-align:center;">검색 결과 없음</div>';
+                } else {
+                    dropdown.innerHTML = results.map(c =>
+                        `<div style="padding:6px 12px;cursor:pointer;border-bottom:1px solid var(--border-light);font-size:11px;"
+                            onmouseover="this.style.background='#F3F4F6'" onmouseout="this.style.background=''"
+                            onclick="selectCategory('${c.id}','${c.name}')">
+                            ${c.name}
+                        </div>`
+                    ).join('');
+                }
+            } catch(e) {}
+        }, 500);
+    }
+
+    function selectCategory(id, name) {
+        document.getElementById('bulkProductCategory').value = id;
+        document.getElementById('bulkCategoryDisplay').textContent = name;
+        document.getElementById('bulkCategorySearch').value = '';
+        document.getElementById('bulkCategoryDropdown').style.display = 'none';
+        categoryPickerOpen = false;
+        updateSkuPreview();
+    }
+
+    // 카테고리 드롭다운 외부 클릭 시 닫기
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#bulkCategorySearch') && !e.target.closest('#bulkCategoryDropdown')) {
+            document.getElementById('bulkCategoryDropdown')?.style && (document.getElementById('bulkCategoryDropdown').style.display = 'none');
+            categoryPickerOpen = false;
+        }
+    });
+
+    // 품번 미리보기 업데이트
+    // 카테고리 ID → 품번 약어 매핑
+    const catSkuMap = {
+        '50021299':'KN','50021319':'CD','50021261':'VT','50021260':'TN',
+        '50000804':'BL','50000803':'TS','50000807':'OP','50000808':'SK',
+        '50000810':'PT','50000567':'SF','50021360':'JK','50021419':'TC',
+        '50021439':'SC','50021459':'LC','50021321':'PD','50021441':'OV',
+        'KN':'KN','CD':'CD','VT':'VT','TN':'TN','BL':'BL','TS':'TS',
+        'OP':'OP','SK':'SK','PT':'PT','SF':'SF',
+    };
+
+    function updateSkuPreview() {
+        const nameEl = document.getElementById('bulkProductName');
+        const skuEl = document.getElementById('bulkProductSku');
+        if (skuEl.value) return;
+        const name = nameEl.value.trim();
+        const brand = extractBulkBrand(name);
+        const catId = document.getElementById('bulkProductCategory').value;
+        const cat = catSkuMap[catId] || 'XX';
+        const year = new Date().getFullYear().toString().slice(-2);
+        skuEl.placeholder = `${year}${brand}${cat}___`;
+    }
+
+    function extractBulkBrand(name) {
+        if (!name) return 'XX';
+        // 끝에서 2글자 영문
+        const endMatch = name.match(/\s([a-zA-Z]{2})$/);
+        if (endMatch) return endMatch[1].toUpperCase();
+        // 앞에서 2글자 영문
+        const startMatch = name.match(/^([a-zA-Z]{2})\s/);
+        if (startMatch) return startMatch[1].toUpperCase();
+        return 'XX';
+    }
+
     // 상품명에서 컬러 자동 감지
     const knownColors = ['아이보리','블랙','베이지','그레이','크림','브라운','네이비','카키','화이트','핑크',
         '차콜','와인','모카','민트','오렌지','연보라','소라','다홍','레드','블루','그린','옐로우',
@@ -6502,6 +6645,9 @@
         const qty = parseInt(document.getElementById('bulkProductQty').value) || parseInt(document.getElementById('bulkDefaultQty').value) || 5;
         const colors = [...bulkSelectedColors];
         const sizes = bulkSelectedSizes.length > 0 ? [...bulkSelectedSizes] : ['Free'];
+        const category = document.getElementById('bulkProductCategory').value;
+        const categoryName = document.getElementById('bulkCategoryDisplay')?.textContent || '';
+        const manualSku = document.getElementById('bulkProductSku').value.trim();
 
         // 이미지 FTP 업로드
         const formData = new FormData();
@@ -6516,8 +6662,23 @@
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || '업로드 실패');
 
+            // 품번 자동생성 (수동 입력이 없으면)
+            let sku = manualSku;
+            if (!sku) {
+                try {
+                    const brand = extractBulkBrand(name);
+                    const skuRes = await fetch('/api/bulk/next-sku', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ brand, category, count: 1 }),
+                    });
+                    const skuData = await skuRes.json();
+                    if (skuRes.ok && skuData.skus) sku = skuData.skus[0];
+                } catch (e) { console.log('품번 생성 실패:', e); }
+            }
+
             bulkQueue.push({
-                name, price, qty, colors, sizes,
+                name, price, qty, colors, sizes, category, categoryName, sku,
                 imageUrls: data.urls,
                 thumbUrl: URL.createObjectURL(bulkImageFiles[0]),
             });
@@ -6536,6 +6697,7 @@
         document.getElementById('bulkProductName').value = '';
         document.getElementById('bulkProductPrice').value = '';
         document.getElementById('bulkProductQty').value = '';
+        document.getElementById('bulkProductSku').value = '';
         bulkImageFiles = [];
         bulkSelectedColors = [];
         bulkSelectedSizes = [];
@@ -6567,12 +6729,12 @@
                 <thead>
                     <tr style="border-bottom:2px solid var(--border);text-align:left;">
                         <th style="padding:6px 4px;width:40px;"></th>
+                        <th style="padding:6px 4px;width:90px;">품번</th>
                         <th style="padding:6px 4px;">상품명</th>
-                        <th style="padding:6px 4px;width:80px;">가격</th>
-                        <th style="padding:6px 4px;width:50px;">수량</th>
+                        <th style="padding:6px 4px;width:70px;">가격</th>
                         <th style="padding:6px 4px;">컬러</th>
-                        <th style="padding:6px 4px;width:60px;">사이즈</th>
-                        <th style="padding:6px 4px;width:45px;">이미지</th>
+                        <th style="padding:6px 4px;width:50px;">사이즈</th>
+                        <th style="padding:6px 4px;width:40px;">이미지</th>
                         <th style="padding:6px 4px;width:30px;"></th>
                     </tr>
                 </thead>
@@ -6580,9 +6742,9 @@
                     ${bulkQueue.map((item, i) => `
                     <tr style="border-bottom:1px solid var(--border-light);cursor:pointer;" id="bulkQueueItem${i}" onclick="openQueueEditModal(${i})" title="클릭하여 수정">
                         <td style="padding:4px;"><img src="${item.thumbUrl || item.imageUrls[0]}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;"></td>
+                        <td style="padding:4px;font-size:11px;font-family:monospace;color:var(--text-secondary);">${item.sku || '-'}</td>
                         <td style="padding:4px;font-size:12px;">${item.name}</td>
                         <td style="padding:4px;font-size:12px;text-align:right;">${Number(item.price).toLocaleString()}</td>
-                        <td style="padding:4px;font-size:12px;text-align:right;">${item.qty}</td>
                         <td style="padding:4px;">${item.colors.map(c => '<span class="bulk-color-tag">'+c+'</span>').join('') || '<span style="color:var(--text-tertiary);font-size:11px;">-</span>'}</td>
                         <td style="padding:4px;">${(item.sizes||[]).map(s => '<span class="bulk-color-tag" style="background:#F0FDF4;color:#16A34A;">'+s+'</span>').join('') || '<span style="color:var(--text-tertiary);font-size:11px;">-</span>'}</td>
                         <td style="padding:4px;text-align:center;color:var(--text-tertiary);">${item.imageUrls.length}장</td>
@@ -6633,6 +6795,21 @@
                         <input type="file" id="queueEditFileInput" multiple accept="image/*" style="display:none" onchange="handleQueueImageAdd(${idx})">
                     </div>
 
+                    <!-- 품번 / 카테고리 -->
+                    <div style="display:flex;gap:8px;margin-bottom:8px;">
+                        <div class="form-group" style="flex:0 0 130px;margin:0;">
+                            <label style="font-size:12px;font-weight:500;color:var(--text-secondary);">품번</label>
+                            <input type="text" id="queueEditSku" value="${item.sku || ''}" class="form-input" style="font-family:monospace;">
+                        </div>
+                        <div class="form-group" style="flex:1;margin:0;">
+                            <label style="font-size:12px;font-weight:500;color:var(--text-secondary);">카테고리</label>
+                            <select id="queueEditCategory" class="form-input">
+                                ${[['KN','니트>풀오버'],['CD','니트>카디건'],['VT','니트>베스트'],['TN','니트>터틀넥'],['BL','블라우스/셔츠'],['TS','티셔츠'],['OP','원피스'],['SK','스커트'],['PT','바지'],['SF','숄']]
+                                .map(([v,l]) => '<option value="'+v+'"'+(item.category===v?' selected':'')+'>'+l+'</option>').join('')}
+                            </select>
+                        </div>
+                    </div>
+
                     <!-- 상품명 -->
                     <div class="form-group" style="margin-bottom:8px;">
                         <label style="font-size:12px;font-weight:500;color:var(--text-secondary);">상품명</label>
@@ -6679,6 +6856,8 @@
 
     function saveQueueEdit() {
         const item = bulkQueue[queueEditIdx];
+        item.sku = document.getElementById('queueEditSku').value.trim();
+        item.category = document.getElementById('queueEditCategory').value;
         item.name = document.getElementById('queueEditName').value.trim() || item.name;
         item.price = parseInt(document.getElementById('queueEditPrice').value) || item.price;
         item.qty = parseInt(document.getElementById('queueEditQty').value) || item.qty;

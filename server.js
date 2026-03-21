@@ -2457,6 +2457,110 @@ app.post('/api/bulk/upload-images', bulkUpload.array('images', 20), async (req, 
   }
 });
 
+// A 스토어 클라이언트만 가져오기 (B 스토어 없어도 동작)
+async function getStoreAClient() {
+  if (scheduler.storeA) return scheduler.storeA;
+  const getVal = async (key) => {
+    const rows = await query('SELECT value FROM sync_config WHERE `key` = ?', [key]);
+    return rows[0] ? rows[0].value : '';
+  };
+  const aId = process.env.STORE_A_CLIENT_ID || await getVal('store_a_client_id');
+  const aSecret = process.env.STORE_A_CLIENT_SECRET || await getVal('store_a_client_secret');
+  if (!aId || !aSecret) throw new Error('A 스토어 API 키가 설정되지 않았습니다.');
+  return new NaverCommerceClient(aId, aSecret, 'StoreA');
+}
+
+// GET /api/bulk/categories - 네이버 카테고리 조회
+app.get('/api/bulk/categories', async (req, res) => {
+  try {
+    const client = await getStoreAClient();
+    const parentId = req.query.parentId || '';
+
+    // 하위 카테고리가 있는 것들 (네이버 API가 hasChildren을 안 주는 경우 대비)
+    const knownParents = new Set(['50021279','50021359','50000814']); // 니트, 아우터, 점퍼
+
+    if (!parentId) {
+      const subs = await client.apiCall('GET', '/v1/categories/50000167/sub-categories');
+      res.json(subs.map(c => ({ id: String(c.id), name: c.name, hasChildren: knownParents.has(String(c.id)) || !!c.hasChildren })));
+    } else {
+      const subs = await client.apiCall('GET', '/v1/categories/' + parentId + '/sub-categories');
+      // 하위가 있는지 한번 더 체크
+      const results = [];
+      for (const c of subs) {
+        let hasChild = !!c.hasChildren;
+        if (!hasChild) {
+          try {
+            const check = await client.apiCall('GET', '/v1/categories/' + c.id + '/sub-categories');
+            hasChild = Array.isArray(check) && check.length > 0;
+          } catch(e) {}
+        }
+        results.push({ id: String(c.id), name: c.name, hasChildren: hasChild });
+      }
+      res.json(results);
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/bulk/categories/search - 카테고리 이름 검색
+app.get('/api/bulk/categories/search', async (req, res) => {
+  try {
+    const client = await getStoreAClient();
+    const keyword = req.query.keyword || '';
+    if (!keyword) return res.json([]);
+
+    const data = await client.apiCall('GET', '/v1/categories?name=' + encodeURIComponent(keyword));
+    const results = (Array.isArray(data) ? data : []).slice(0, 20).map(c => ({
+      id: c.id,
+      name: c.wholeCategoryName || c.name,
+      hasChildren: c.hasChildren || false,
+    }));
+    res.json(results);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/bulk/next-sku - 다음 품번 조회
+app.post('/api/bulk/next-sku', async (req, res) => {
+  try {
+    const { brand, category, count = 1 } = req.body;
+    const year = new Date().getFullYear().toString().slice(-2);
+    const br = (brand || 'XX').toUpperCase().slice(0, 2);
+    // 카테고리 ID → 약어 변환
+    const catIdToSku = {
+      '50021299':'KN','50021319':'CD','50021261':'VT','50021260':'TN',
+      '50000804':'BL','50000803':'TS','50000807':'OP','50000808':'SK',
+      '50000810':'PT','50000567':'SF','50021360':'JK','50021419':'TC',
+      '50021439':'SC','50021459':'LC','50021321':'PD','50021441':'OV',
+    };
+    const cat = (catIdToSku[category] || category || 'KN').toUpperCase().slice(0, 2);
+    const prefix = `${year}${br}${cat}`;
+
+    // sync_config에서 마지막 번호 조회
+    const key = `bulk_sku_last_${prefix}`;
+    const rows = await query('SELECT value FROM sync_config WHERE `key` = ?', [key]);
+    let lastNum = rows.length > 0 ? parseInt(rows[0].value) || 0 : 0;
+
+    const skus = [];
+    for (let i = 0; i < count; i++) {
+      lastNum++;
+      skus.push(`${prefix}${String(lastNum).padStart(3, '0')}`);
+    }
+
+    // 마지막 번호 저장
+    await query(
+      "INSERT INTO sync_config (`key`, value, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()",
+      [key, String(lastNum)]
+    );
+
+    res.json({ skus, prefix, lastNum });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/bulk/generate-excel - 대량등록 엑셀 생성
 app.post('/api/bulk/generate-excel', async (req, res) => {
   try {
@@ -2485,9 +2589,28 @@ app.post('/api/bulk/generate-excel', async (req, res) => {
     for (const product of products) {
       const row = new Array(93).fill('');
 
-      // [0] 판매자 상품코드 — 선택
+      // 카테고리 매핑 (네이버 실제 카테고리 ID)
+      const categoryMap = {
+        // 패션의류 > 여성의류 > 니트
+        'KN': '50021299',   // 니트 > 풀오버
+        'CD': '50021319',   // 니트 > 카디건
+        'VT': '50021261',   // 니트 > 베스트
+        'TN': '50021260',   // 니트 > 터틀넥
+        // 패션의류 > 여성의류
+        'BL': '50000804',   // 블라우스/셔츠
+        'TS': '50000803',   // 티셔츠
+        'OP': '50000807',   // 원피스
+        'SK': '50000808',   // 스커트
+        'PT': '50000810',   // 바지
+        // 패션잡화
+        'SF': '50000567',   // 숄
+      };
+
+      // [0] 판매자 상품코드 (품번) — 자동 또는 수동
+      row[0] = product.sku || '';
       // [1] 카테고리코드 — 필수
-      row[1] = cfg.bulk_category_code || '50021299';
+      const catCode = product.category || cfg.bulk_category_code || '50021299';
+      row[1] = categoryMap[catCode] || catCode; // 약어면 변환, 숫자ID면 그대로
       // [2] 상품명 — 필수
       row[2] = product.name || '';
       // [3] 상품상태
