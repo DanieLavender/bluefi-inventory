@@ -2487,7 +2487,7 @@ app.post('/api/bulk/generate-excel', async (req, res) => {
 
       // [0] 판매자 상품코드 — 선택
       // [1] 카테고리코드 — 필수
-      row[1] = cfg.bulk_category_code || '';
+      row[1] = cfg.bulk_category_code || '50021299';
       // [2] 상품명 — 필수
       row[2] = product.name || '';
       // [3] 상품상태
@@ -2499,15 +2499,28 @@ app.post('/api/bulk/generate-excel', async (req, res) => {
       // [11] 재고수량 — 필수
       row[11] = product.qty || cfg.bulk_default_qty || 5;
 
-      // 옵션 (컬러)
+      // 옵션 (컬러 + 사이즈 조합형)
       const colors = product.colors || [];
+      const sizes = product.sizes || (cfg.bulk_default_sizes || 'Free').split(',').map(s => s.trim()).filter(Boolean);
+      const totalQty = product.qty || cfg.bulk_default_qty || 5;
+
       if (colors.length > 0) {
-        row[12] = '단독형';  // 옵션형태
-        row[13] = '색상';     // 옵션명
-        row[14] = colors.join(',');  // 옵션값
-        // 옵션 재고수량: 각 컬러별 동일하게 분배
-        const perColorQty = Math.max(1, Math.floor((product.qty || cfg.bulk_default_qty || 5) / colors.length));
-        row[16] = colors.map(() => perColorQty).join(',');
+        if (sizes.length > 0) {
+          // 조합형: 색상 × 사이즈
+          row[12] = '조합형';
+          row[13] = '색상\n사이즈';
+          row[14] = colors.join(',') + '\n' + sizes.join(',');
+          const combCount = colors.length * sizes.length;
+          const perCombQty = Math.max(1, Math.floor(totalQty / combCount));
+          row[16] = Array(combCount).fill(perCombQty).join(',');
+        } else {
+          // 단독형: 색상만
+          row[12] = '단독형';
+          row[13] = '색상';
+          row[14] = colors.join(',');
+          const perColorQty = Math.max(1, Math.floor(totalQty / colors.length));
+          row[16] = colors.map(() => perColorQty).join(',');
+        }
       }
 
       // [22] 대표이미지 — 필수
@@ -2526,6 +2539,11 @@ app.post('/api/bulk/generate-excel', async (req, res) => {
       ).join('<br/>');
       row[24] = `<div style="text-align:center;max-width:860px;margin:0 auto;">${detailImages}</div>`;
 
+      // [25] 브랜드, [26] 제조사 — 상품명에서 자동 추출
+      const brand = extractBrand(product.name);
+      row[25] = brand ? brand.toUpperCase() : (cfg.bulk_brand || '');
+      row[26] = cfg.bulk_manufacturer || '상세설명참조';
+
       // [29] 원산지코드 — 필수
       row[29] = cfg.bulk_origin_code || '00';
       // [31] 복수원산지여부
@@ -2538,32 +2556,46 @@ app.post('/api/bulk/generate-excel', async (req, res) => {
         row[34] = cfg.bulk_delivery_template_code;
       } else {
         row[35] = cfg.bulk_delivery_method || '택배, 소포, 등기';
-        row[36] = cfg.bulk_courier_code || '';
+        row[36] = cfg.bulk_courier_code || 'CJGLS';
         row[37] = cfg.bulk_delivery_fee_type || '무료';
         row[38] = cfg.bulk_delivery_fee || '';
         row[39] = cfg.bulk_delivery_payment || '';
         row[40] = cfg.bulk_free_condition || '';
-        row[46] = cfg.bulk_return_fee || '2500';
-        row[47] = cfg.bulk_exchange_fee || '2500';
+        row[46] = cfg.bulk_return_fee || '4000';
+        row[47] = cfg.bulk_exchange_fee || '8000';
       }
+      row[49] = 'N'; // 별도설치비
 
-      // 상품정보제공고시 템플릿코드
+      // 상품정보제공고시 — 템플릿코드 없으면 WEAR 타입 자동 입력
       if (cfg.bulk_product_info_code) {
         row[50] = cfg.bulk_product_info_code;
+      } else {
+        row[51] = '상품상세참조';  // 품명
+        row[52] = '상품상세참조';  // 모델명
+        row[53] = '상품상세참조';  // 인증허가사항
+        row[54] = '상품상세참조';  // 제조자
       }
 
-      // A/S 정보 — 템플릿코드가 없으면 전화번호/안내 직접 입력 (필수)
+      // A/S 정보
       if (cfg.bulk_as_template_code) {
         row[55] = cfg.bulk_as_template_code;
       }
       row[56] = cfg.bulk_as_phone || '01046680439';
       row[57] = cfg.bulk_as_info || '상세 참조';
 
+      // 즉시할인
+      if (cfg.bulk_discount_value) {
+        row[59] = cfg.bulk_discount_value;
+        row[60] = cfg.bulk_discount_unit || '%';
+        row[61] = cfg.bulk_discount_value;   // 모바일 동일
+        row[62] = cfg.bulk_discount_unit || '%';
+      }
+
       // 수입산인 경우 수입국/수입사 필수 (원산지코드 02xx = 수입산)
       const originCode = row[29] || '';
       if (originCode.startsWith('02') || originCode.startsWith('03')) {
-        row[30] = cfg.bulk_importer || '상세설명참조';  // 수입사
-        row[32] = cfg.bulk_origin_text || '';           // 원산지 직접입력
+        row[30] = cfg.bulk_importer || '상세설명참조';
+        row[32] = cfg.bulk_origin_text || '';
       }
 
       dataRows.push(row);

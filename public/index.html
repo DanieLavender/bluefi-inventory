@@ -2309,6 +2309,16 @@
                             <label>자주 쓰는 컬러 (쉼표 구분)</label>
                             <input type="text" id="bulkCfgColors" class="form-input" placeholder="아이보리,블랙,베이지,그레이,크림,브라운,네이비,카키,화이트,핑크">
                         </div>
+                        <div class="bulk-settings-grid" style="margin-top:12px;">
+                            <div>
+                                <div class="form-group"><label>사이즈 (쉼표 구분)</label><input type="text" id="bulkCfgSizes" class="form-input" value="Free" placeholder="Free,S,M,L,XL"></div>
+                                <div class="form-group"><label>제조사</label><input type="text" id="bulkCfgManufacturer" class="form-input" value="상세설명참조" placeholder="상세설명참조"></div>
+                            </div>
+                            <div>
+                                <div class="form-group"><label>즉시할인 값</label><input type="number" id="bulkCfgDiscountValue" class="form-input" placeholder="예: 20 (빈칸이면 할인없음)"></div>
+                                <div class="form-group"><label>즉시할인 단위</label><select id="bulkCfgDiscountUnit" class="form-input"><option value="%">%</option><option value="원">원</option></select></div>
+                            </div>
+                        </div>
                         <div style="text-align:right;margin-top:12px;">
                             <button class="btn btn-accent" onclick="saveBulkConfig()">설정 저장</button>
                         </div>
@@ -2326,9 +2336,19 @@
                                 <input type="number" id="bulkDefaultQty" class="form-input" value="5" style="text-align:right;">
                             </div>
                             <div style="flex:1;min-width:200px;">
-                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">빠른 컬러 선택</label>
-                                <div id="bulkQuickColors" style="display:flex;gap:4px;flex-wrap:wrap;">
-                                    <!-- JS에서 렌더링 -->
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">컬러 선택</label>
+                                <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+                                    <div id="bulkQuickColors" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+                                    <input type="text" id="bulkNewColor" placeholder="+ 추가" style="width:60px;padding:4px 8px;border:1px dashed var(--border);border-radius:16px;font-size:12px;text-align:center;background:transparent;" onkeydown="if(event.key==='Enter'){event.preventDefault();addBulkQuickItem('color',this.value);this.value='';}">
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-top:8px;">
+                            <div style="flex:1;min-width:200px;">
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">사이즈 선택</label>
+                                <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+                                    <div id="bulkQuickSizes" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+                                    <input type="text" id="bulkNewSize" placeholder="+ 추가" style="width:60px;padding:4px 8px;border:1px dashed var(--border);border-radius:16px;font-size:12px;text-align:center;background:transparent;" onkeydown="if(event.key==='Enter'){event.preventDefault();addBulkQuickItem('size',this.value);this.value='';}">
                                 </div>
                             </div>
                         </div>
@@ -2339,17 +2359,21 @@
                         <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;">상품 추가</h3>
                         <!-- 드래그&드롭 영역 -->
                         <div class="bulk-dropzone" id="bulkDropzone">
-                            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#9CA3AF" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                            <p style="margin:0;color:var(--text-secondary);font-size:13px;">이미지를 드래그하거나 클릭하여 선택</p>
-                            <p style="margin:0;color:var(--text-tertiary);font-size:11px;">JPG/PNG, 최대 20장</p>
-                            <input type="file" id="bulkFileInput" multiple accept="image/*" style="display:none">
+                            <div id="bulkDropzoneEmpty">
+                                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#9CA3AF" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                <p style="margin:0;color:var(--text-secondary);font-size:13px;">이미지를 드래그하거나 클릭하여 선택</p>
+                                <p style="margin:0;color:var(--text-tertiary);font-size:11px;">JPG/PNG, 최대 20장</p>
+                            </div>
+                            <div class="bulk-preview-grid" id="bulkImagePreview" style="display:none;"></div>
                         </div>
-                        <div class="bulk-preview-grid" id="bulkImagePreview"></div>
+                        <input type="file" id="bulkFileInput" multiple accept="image/*" style="display:none">
 
                         <div style="margin-top:12px;">
                             <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">상품명 *</label>
-                            <input type="text" id="bulkProductName" class="form-input" placeholder="예: hm 캐시미어 울 라운드니트"
-                                onkeydown="if(event.key==='Enter'){event.preventDefault();addToBulkQueue();}">
+                            <input type="text" id="bulkProductName" class="form-input" placeholder="예: hm 캐시미어 울 라운드니트 아이보리 블랙"
+                                onkeydown="if(event.key==='Enter'){event.preventDefault();addToBulkQueue();}"
+                                oninput="autoDetectColors()"
+                                onblur="autoDetectColors()">
                         </div>
                         <div style="margin-top:8px;">
                             <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">
@@ -2369,9 +2393,10 @@
                                 <input type="number" id="bulkProductQty" class="form-input" placeholder="기본값">
                             </div>
                         </div>
+                        <div id="bulkValidationMsg" style="display:none;margin-top:8px;padding:8px 12px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;color:#DC2626;font-size:12px;"></div>
                         <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
                             <button class="btn btn-outline" onclick="resetBulkInput()">초기화</button>
-                            <button class="btn btn-accent" onclick="addToBulkQueue()">+ 대기열에 추가</button>
+                            <button class="btn btn-accent" id="bulkAddBtn" onclick="addToBulkQueue()">+ 대기열에 추가</button>
                         </div>
                     </div>
 
@@ -6173,8 +6198,10 @@
     // ===== 대량 등록 (Bulk Registration) =====
     let bulkQueue = [];
     let bulkSelectedColors = [];
+    let bulkSelectedSizes = [];
     let bulkImageFiles = [];
     let bulkConfigLoaded = false;
+    let bulkDropzoneInitialized = false;
 
     function switchCopyTab(tab) {
         document.querySelectorAll('.copy-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
@@ -6209,10 +6236,19 @@
             const colors = cfg.bulk_frequent_colors || '아이보리,블랙,베이지,그레이,크림,브라운,네이비,카키,화이트,핑크';
             document.getElementById('bulkCfgColors').value = colors;
             renderBulkQuickColors(colors);
+            // 사이즈
+            const sizes = cfg.bulk_default_sizes || 'Free';
+            document.getElementById('bulkCfgSizes').value = sizes;
+            renderBulkQuickSizes(sizes);
+            // 할인
+            if (cfg.bulk_discount_value) document.getElementById('bulkCfgDiscountValue').value = cfg.bulk_discount_value;
+            if (cfg.bulk_discount_unit) document.getElementById('bulkCfgDiscountUnit').value = cfg.bulk_discount_unit;
+            // 제조사
+            if (cfg.bulk_manufacturer) document.getElementById('bulkCfgManufacturer').value = cfg.bulk_manufacturer;
         } catch (e) {
             console.log('bulk config load error:', e);
-            // 기본 컬러 렌더링
             renderBulkQuickColors('아이보리,블랙,베이지,그레이,크림,브라운,네이비,카키,화이트,핑크');
+            renderBulkQuickSizes('Free');
         }
     }
 
@@ -6234,6 +6270,10 @@
             bulk_default_price: document.getElementById('bulkDefaultPrice').value,
             bulk_default_qty: document.getElementById('bulkDefaultQty').value,
             bulk_frequent_colors: document.getElementById('bulkCfgColors').value,
+            bulk_default_sizes: document.getElementById('bulkCfgSizes').value,
+            bulk_discount_value: document.getElementById('bulkCfgDiscountValue').value,
+            bulk_discount_unit: document.getElementById('bulkCfgDiscountUnit').value,
+            bulk_manufacturer: document.getElementById('bulkCfgManufacturer').value,
         };
         try {
             await api('/api/bulk/config', { method: 'PUT', body: JSON.stringify(data) });
@@ -6253,15 +6293,15 @@
         const container = document.getElementById('bulkQuickColors');
         const colors = (colorsStr || '').split(',').map(c => c.trim()).filter(Boolean);
         container.innerHTML = colors.map(c =>
-            `<button class="bulk-color-btn${bulkSelectedColors.includes(c) ? ' selected' : ''}" onclick="toggleBulkColor('${c}')">${c}</button>`
+            `<button class="bulk-color-btn${bulkSelectedColors.includes(c) ? ' selected' : ''}" onclick="toggleBulkColor('${c}')" oncontextmenu="event.preventDefault();if(confirm('${c} 삭제?'))removeBulkQuickItem('color','${c}')">${c}</button>`
         ).join('');
     }
 
     function toggleBulkColor(color) {
+        manualColorMode = true; // 수동 선택 시 자동감지 해제
         const idx = bulkSelectedColors.indexOf(color);
         if (idx >= 0) bulkSelectedColors.splice(idx, 1);
         else bulkSelectedColors.push(color);
-        // 버튼 상태 업데이트
         document.querySelectorAll('#bulkQuickColors .bulk-color-btn').forEach(btn => {
             btn.classList.toggle('selected', bulkSelectedColors.includes(btn.textContent));
         });
@@ -6272,24 +6312,119 @@
         const container = document.getElementById('bulkSelectedColorsDisplay');
         document.getElementById('bulkColorCount').textContent = `(${bulkSelectedColors.length})`;
         if (bulkSelectedColors.length === 0) {
-            container.innerHTML = '<span style="font-size:12px;color:var(--text-tertiary);">위에서 컬러 버튼을 클릭하세요</span>';
+            container.innerHTML = '<span style="font-size:12px;color:var(--text-tertiary);">상품명에 컬러를 포함하면 자동 감지됩니다</span>';
         } else {
+            const badge = !manualColorMode && autoDetectedColors.length > 0 ? '<span style="font-size:10px;color:var(--accent);margin-left:4px;">자동감지</span>' : '';
             container.innerHTML = bulkSelectedColors.map(c =>
                 `<span class="bulk-color-tag">${c}</span>`
-            ).join('');
+            ).join('') + badge;
+        }
+    }
+
+    function renderBulkQuickSizes(sizesStr) {
+        const container = document.getElementById('bulkQuickSizes');
+        if (!container) return;
+        const sizes = (sizesStr || '').split(',').map(s => s.trim()).filter(Boolean);
+        container.innerHTML = sizes.map(s =>
+            `<button class="bulk-color-btn${bulkSelectedSizes.includes(s) ? ' selected' : ''}" onclick="toggleBulkSize('${s}')" oncontextmenu="event.preventDefault();if(confirm('${s} 삭제?'))removeBulkQuickItem('size','${s}')">${s}</button>`
+        ).join('');
+    }
+
+    function toggleBulkSize(size) {
+        const idx = bulkSelectedSizes.indexOf(size);
+        if (idx >= 0) bulkSelectedSizes.splice(idx, 1);
+        else bulkSelectedSizes.push(size);
+        document.querySelectorAll('#bulkQuickSizes .bulk-color-btn').forEach(btn => {
+            btn.classList.toggle('selected', bulkSelectedSizes.includes(btn.textContent));
+        });
+    }
+
+    // 상품명에서 컬러 자동 감지
+    const knownColors = ['아이보리','블랙','베이지','그레이','크림','브라운','네이비','카키','화이트','핑크',
+        '차콜','와인','모카','민트','오렌지','연보라','소라','다홍','레드','블루','그린','옐로우',
+        '라벤더','코랄','버터','딥차콜','멜란그레이','크림아이보리','스카이블루','연카키','라이트그레이',
+        '진베이지','연베이지','다크그레이','라이트핑크','머스타드','올리브','퍼플','로즈','캐멀'];
+    let autoDetectedColors = [];
+    let manualColorMode = false;
+
+    function autoDetectColors() {
+        if (manualColorMode) return;
+        const name = document.getElementById('bulkProductName').value;
+        const detected = knownColors.filter(c => name.includes(c));
+        // 변경이 있을 때만 업데이트
+        if (JSON.stringify(detected) === JSON.stringify(autoDetectedColors)) return;
+        autoDetectedColors = detected;
+        bulkSelectedColors = [...detected];
+        // 버튼 상태 업데이트
+        document.querySelectorAll('#bulkQuickColors .bulk-color-btn').forEach(btn => {
+            btn.classList.toggle('selected', bulkSelectedColors.includes(btn.textContent));
+        });
+        renderBulkSelectedColors();
+    }
+
+    function addBulkQuickItem(type, value) {
+        const v = value.trim();
+        if (!v) return;
+        if (type === 'color') {
+            const input = document.getElementById('bulkCfgColors');
+            const colors = input.value.split(',').map(c => c.trim()).filter(Boolean);
+            if (colors.includes(v)) return;
+            colors.push(v);
+            input.value = colors.join(',');
+            renderBulkQuickColors(input.value);
+        } else {
+            const input = document.getElementById('bulkCfgSizes');
+            const sizes = input.value.split(',').map(s => s.trim()).filter(Boolean);
+            if (sizes.includes(v)) return;
+            sizes.push(v);
+            input.value = sizes.join(',');
+            renderBulkQuickSizes(input.value);
+        }
+    }
+
+    function removeBulkQuickItem(type, value) {
+        if (type === 'color') {
+            const input = document.getElementById('bulkCfgColors');
+            const colors = input.value.split(',').map(c => c.trim()).filter(c => c && c !== value);
+            input.value = colors.join(',');
+            bulkSelectedColors = bulkSelectedColors.filter(c => c !== value);
+            renderBulkQuickColors(input.value);
+            renderBulkSelectedColors();
+        } else {
+            const input = document.getElementById('bulkCfgSizes');
+            const sizes = input.value.split(',').map(s => s.trim()).filter(s => s && s !== value);
+            input.value = sizes.join(',');
+            bulkSelectedSizes = bulkSelectedSizes.filter(s => s !== value);
+            renderBulkQuickSizes(input.value);
         }
     }
 
     function initBulkDropzone() {
+        if (bulkDropzoneInitialized) return;
+        bulkDropzoneInitialized = true;
+
         const dropzone = document.getElementById('bulkDropzone');
         const fileInput = document.getElementById('bulkFileInput');
         if (!dropzone || !fileInput) return;
 
-        dropzone.addEventListener('click', () => fileInput.click());
-        dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
-        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('click', (e) => {
+            // 삭제 버튼 클릭은 무시
+            if (e.target.closest('.btn-remove')) return;
+            fileInput.click();
+        });
+        dropzone.addEventListener('dragover', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add('dragover');
+        });
+        dropzone.addEventListener('dragleave', (e) => {
+            // 자식 요소로 이동할 때 dragleave 방지
+            if (dropzone.contains(e.relatedTarget)) return;
+            dropzone.classList.remove('dragover');
+        });
         dropzone.addEventListener('drop', e => {
             e.preventDefault();
+            e.stopPropagation();
             dropzone.classList.remove('dragover');
             handleBulkFiles(e.dataTransfer.files);
         });
@@ -6309,25 +6444,28 @@
     }
 
     function renderBulkImagePreview() {
-        const container = document.getElementById('bulkImagePreview');
+        const emptyEl = document.getElementById('bulkDropzoneEmpty');
+        const previewEl = document.getElementById('bulkImagePreview');
         const dropzone = document.getElementById('bulkDropzone');
+
         if (bulkImageFiles.length > 0) {
+            emptyEl.style.display = 'none';
+            previewEl.style.display = 'flex';
             dropzone.classList.add('has-images');
-            dropzone.querySelector('svg').style.display = 'none';
-            dropzone.querySelectorAll('p').forEach(p => p.style.display = 'none');
+            previewEl.innerHTML = bulkImageFiles.map((f, i) => {
+                const url = URL.createObjectURL(f);
+                return `<div class="bulk-preview-item">
+                    <img src="${url}" alt="${f.name}">
+                    ${i === 0 ? '<div class="badge-rep">대표</div>' : ''}
+                    <button class="btn-remove" onclick="event.stopPropagation();removeBulkImage(${i})">&times;</button>
+                </div>`;
+            }).join('') + `<div class="bulk-preview-item" style="display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);cursor:pointer;color:var(--text-tertiary);font-size:18px;" title="이미지 추가">+</div>`;
         } else {
+            emptyEl.style.display = '';
+            previewEl.style.display = 'none';
+            previewEl.innerHTML = '';
             dropzone.classList.remove('has-images');
-            dropzone.querySelector('svg').style.display = '';
-            dropzone.querySelectorAll('p').forEach(p => p.style.display = '');
         }
-        container.innerHTML = bulkImageFiles.map((f, i) => {
-            const url = URL.createObjectURL(f);
-            return `<div class="bulk-preview-item">
-                <img src="${url}" alt="${f.name}">
-                ${i === 0 ? '<div class="badge-rep">대표</div>' : ''}
-                <button class="btn-remove" onclick="removeBulkImage(${i})">&times;</button>
-            </div>`;
-        }).join('');
     }
 
     function removeBulkImage(idx) {
@@ -6336,21 +6474,42 @@
     }
 
     async function addToBulkQueue() {
+        // 필수 입력 검증
         const name = document.getElementById('bulkProductName').value.trim();
-        if (!name) { showToast('상품명을 입력해주세요.', 'warning'); return; }
-        if (bulkImageFiles.length === 0) { showToast('이미지를 추가해주세요.', 'warning'); return; }
+        const missing = [];
+        if (!name) missing.push('상품명');
+        if (bulkImageFiles.length === 0) missing.push('이미지');
+        // 컬러 자동감지 시도 후에도 없으면 경고 (필수는 아님)
+        if (bulkSelectedColors.length === 0) {
+            autoDetectColors();
+            if (bulkSelectedColors.length === 0) missing.push('컬러');
+        }
+        // 검증 메시지 영역
+        const msgEl = document.getElementById('bulkValidationMsg');
+        if (missing.length > 0) {
+            const labels = { '상품명': '상품명을 입력해주세요', '이미지': '이미지를 추가해주세요', '컬러': '컬러를 1개 이상 선택해주세요' };
+            msgEl.innerHTML = missing.map(m => '• ' + (labels[m] || m)).join('<br>');
+            msgEl.style.display = '';
+            showToast(`필수 항목을 입력해주세요: ${missing.join(', ')}`, 'warning');
+            if (!name) { const el = document.getElementById('bulkProductName'); el.style.border = '1px solid #EF4444'; setTimeout(() => el.style.border = '', 3000); }
+            if (bulkImageFiles.length === 0) { const el = document.getElementById('bulkDropzone'); el.style.borderColor = '#EF4444'; setTimeout(() => el.style.borderColor = '', 3000); }
+            setTimeout(() => { msgEl.style.display = 'none'; }, 5000);
+            return;
+        }
+        msgEl.style.display = 'none';
 
         const price = parseInt(document.getElementById('bulkProductPrice').value) || parseInt(document.getElementById('bulkDefaultPrice').value) || 29900;
         const qty = parseInt(document.getElementById('bulkProductQty').value) || parseInt(document.getElementById('bulkDefaultQty').value) || 5;
         const colors = [...bulkSelectedColors];
+        const sizes = bulkSelectedSizes.length > 0 ? [...bulkSelectedSizes] : ['Free'];
 
         // 이미지 FTP 업로드
         const formData = new FormData();
         for (const f of bulkImageFiles) formData.append('images', f);
 
-        const addBtn = document.querySelector('#copyTabBulk .btn-accent[onclick="addToBulkQueue()"]');
+        const addBtn = document.getElementById('bulkAddBtn');
         addBtn.disabled = true;
-        addBtn.textContent = '업로드 중...';
+        addBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></span>추가 중...';
 
         try {
             const res = await fetch('/api/bulk/upload-images', { method: 'POST', body: formData });
@@ -6358,18 +6517,18 @@
             if (!res.ok) throw new Error(data.error || '업로드 실패');
 
             bulkQueue.push({
-                name, price, qty, colors,
+                name, price, qty, colors, sizes,
                 imageUrls: data.urls,
                 thumbUrl: URL.createObjectURL(bulkImageFiles[0]),
             });
             renderBulkQueue();
             resetBulkInput();
-            showToast(`"${name}" 대기열에 추가됨`, 'success');
+            showToast(`"${name}" 대기열에 추가됨 (${colors.length}컬러 × ${sizes.length}사이즈)`, 'success');
         } catch (e) {
             showToast('이미지 업로드 실패: ' + e.message, 'error');
         } finally {
             addBtn.disabled = false;
-            addBtn.textContent = '+ 대기열에 추가';
+            addBtn.innerHTML = '+ 대기열에 추가';
         }
     }
 
@@ -6379,9 +6538,13 @@
         document.getElementById('bulkProductQty').value = '';
         bulkImageFiles = [];
         bulkSelectedColors = [];
+        bulkSelectedSizes = [];
+        autoDetectedColors = [];
+        manualColorMode = false;
         renderBulkImagePreview();
         renderBulkSelectedColors();
         document.querySelectorAll('#bulkQuickColors .bulk-color-btn').forEach(btn => btn.classList.remove('selected'));
+        document.querySelectorAll('#bulkQuickSizes .bulk-color-btn').forEach(btn => btn.classList.remove('selected'));
         document.getElementById('bulkProductName').focus();
     }
 
@@ -6398,22 +6561,177 @@
             container.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px 0;font-size:13px;">상품을 추가하면 여기에 표시됩니다</p>';
             return;
         }
-        container.innerHTML = bulkQueue.map((item, i) => `
-            <div class="bulk-queue-item">
-                <img src="${item.thumbUrl || item.imageUrls[0]}" class="bulk-queue-thumb" alt="">
-                <div class="bulk-queue-info">
-                    <div class="bulk-queue-name">${item.name}</div>
-                    <div class="bulk-queue-meta">
-                        ${Number(item.price).toLocaleString()}원 · ${item.qty}개
-                        ${item.colors.length > 0 ? ' · ' + item.colors.map(c => `<span class="bulk-color-tag">${c}</span>`).join('') : ''}
-                        · 이미지 ${item.imageUrls.length}장
+        // 테이블 형태 — 행 클릭 시 수정 모달
+        container.innerHTML = `
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead>
+                    <tr style="border-bottom:2px solid var(--border);text-align:left;">
+                        <th style="padding:6px 4px;width:40px;"></th>
+                        <th style="padding:6px 4px;">상품명</th>
+                        <th style="padding:6px 4px;width:80px;">가격</th>
+                        <th style="padding:6px 4px;width:50px;">수량</th>
+                        <th style="padding:6px 4px;">컬러</th>
+                        <th style="padding:6px 4px;width:60px;">사이즈</th>
+                        <th style="padding:6px 4px;width:45px;">이미지</th>
+                        <th style="padding:6px 4px;width:30px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${bulkQueue.map((item, i) => `
+                    <tr style="border-bottom:1px solid var(--border-light);cursor:pointer;" id="bulkQueueItem${i}" onclick="openQueueEditModal(${i})" title="클릭하여 수정">
+                        <td style="padding:4px;"><img src="${item.thumbUrl || item.imageUrls[0]}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;"></td>
+                        <td style="padding:4px;font-size:12px;">${item.name}</td>
+                        <td style="padding:4px;font-size:12px;text-align:right;">${Number(item.price).toLocaleString()}</td>
+                        <td style="padding:4px;font-size:12px;text-align:right;">${item.qty}</td>
+                        <td style="padding:4px;">${item.colors.map(c => '<span class="bulk-color-tag">'+c+'</span>').join('') || '<span style="color:var(--text-tertiary);font-size:11px;">-</span>'}</td>
+                        <td style="padding:4px;">${(item.sizes||[]).map(s => '<span class="bulk-color-tag" style="background:#F0FDF4;color:#16A34A;">'+s+'</span>').join('') || '<span style="color:var(--text-tertiary);font-size:11px;">-</span>'}</td>
+                        <td style="padding:4px;text-align:center;color:var(--text-tertiary);">${item.imageUrls.length}장</td>
+                        <td style="padding:4px;" onclick="event.stopPropagation();removeBulkQueueItem(${i})"><button style="border:none;background:none;cursor:pointer;color:var(--text-tertiary);padding:2px;" title="삭제"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+                    </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
+    }
+
+    let queueEditIdx = -1;
+
+    function openQueueEditModal(idx) {
+        queueEditIdx = idx;
+        const item = bulkQueue[idx];
+        const colorOptions = (document.getElementById('bulkCfgColors')?.value || '아이보리,블랙,베이지,그레이,크림,브라운').split(',').map(c => c.trim()).filter(Boolean);
+        const sizeOptions = (document.getElementById('bulkCfgSizes')?.value || 'Free,S,M,L,XL').split(',').map(s => s.trim()).filter(Boolean);
+
+        // 모달 생성
+        let modal = document.getElementById('bulkEditModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'bulkEditModal';
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;display:flex;align-items:center;justify-content:center;" onclick="if(event.target===this)closeQueueEditModal()">
+                <div style="background:white;border-radius:12px;padding:24px;width:90%;max-width:500px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                        <h3 style="margin:0;font-size:16px;">상품 수정</h3>
+                        <button onclick="closeQueueEditModal()" style="border:none;background:none;cursor:pointer;font-size:20px;color:var(--text-tertiary);">&times;</button>
+                    </div>
+
+                    <!-- 이미지 -->
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">이미지 (${item.imageUrls.length}장)</label>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            ${item.imageUrls.map((url, ui) => `
+                                <div class="bulk-preview-item">
+                                    <img src="${url}" alt="img${ui}">
+                                    ${ui === 0 ? '<div class="badge-rep">대표</div>' : ''}
+                                    ${item.imageUrls.length > 1 ? `<button class="btn-remove" style="display:block;" onclick="removeQueueImage(${idx},${ui})">&times;</button>` : ''}
+                                </div>
+                            `).join('')}
+                            <div class="bulk-preview-item" style="display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);cursor:pointer;color:var(--text-tertiary);font-size:18px;" onclick="addQueueImage(${idx})" title="이미지 추가">+</div>
+                        </div>
+                        <input type="file" id="queueEditFileInput" multiple accept="image/*" style="display:none" onchange="handleQueueImageAdd(${idx})">
+                    </div>
+
+                    <!-- 상품명 -->
+                    <div class="form-group" style="margin-bottom:8px;">
+                        <label style="font-size:12px;font-weight:500;color:var(--text-secondary);">상품명</label>
+                        <input type="text" id="queueEditName" value="${item.name}" class="form-input">
+                    </div>
+
+                    <!-- 가격 / 수량 -->
+                    <div style="display:flex;gap:8px;margin-bottom:8px;">
+                        <div class="form-group" style="flex:1;margin:0;">
+                            <label style="font-size:12px;font-weight:500;color:var(--text-secondary);">판매가</label>
+                            <input type="number" id="queueEditPrice" value="${item.price}" class="form-input">
+                        </div>
+                        <div class="form-group" style="width:80px;margin:0;">
+                            <label style="font-size:12px;font-weight:500;color:var(--text-secondary);">수량</label>
+                            <input type="number" id="queueEditQty" value="${item.qty}" class="form-input">
+                        </div>
+                    </div>
+
+                    <!-- 컬러 -->
+                    <div style="margin-bottom:8px;">
+                        <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">컬러</label>
+                        <div id="queueEditColors" style="display:flex;gap:4px;flex-wrap:wrap;">
+                            ${colorOptions.map(c => `<button class="bulk-color-btn${item.colors.includes(c) ? ' selected' : ''}" onclick="this.classList.toggle('selected')">${c}</button>`).join('')}
+                        </div>
+                    </div>
+
+                    <!-- 사이즈 -->
+                    <div style="margin-bottom:16px;">
+                        <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">사이즈</label>
+                        <div id="queueEditSizes" style="display:flex;gap:4px;flex-wrap:wrap;">
+                            ${sizeOptions.map(s => `<button class="bulk-color-btn${(item.sizes||[]).includes(s) ? ' selected' : ''}" onclick="this.classList.toggle('selected')">${s}</button>`).join('')}
+                        </div>
+                    </div>
+
+                    <!-- 버튼 -->
+                    <div style="display:flex;gap:8px;justify-content:flex-end;">
+                        <button class="btn btn-outline" onclick="closeQueueEditModal()">취소</button>
+                        <button class="btn btn-accent" onclick="saveQueueEdit()">저장</button>
                     </div>
                 </div>
-                <button class="btn btn-outline btn-sm" onclick="removeBulkQueueItem(${i})" style="flex-shrink:0;padding:4px 8px;">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
-        `).join('');
+            </div>`;
+        modal.style.display = '';
+    }
+
+    function saveQueueEdit() {
+        const item = bulkQueue[queueEditIdx];
+        item.name = document.getElementById('queueEditName').value.trim() || item.name;
+        item.price = parseInt(document.getElementById('queueEditPrice').value) || item.price;
+        item.qty = parseInt(document.getElementById('queueEditQty').value) || item.qty;
+        // 컬러/사이즈: selected 버튼에서 수집
+        item.colors = [...document.querySelectorAll('#queueEditColors .bulk-color-btn.selected')].map(b => b.textContent);
+        item.sizes = [...document.querySelectorAll('#queueEditSizes .bulk-color-btn.selected')].map(b => b.textContent);
+        closeQueueEditModal();
+        renderBulkQueue();
+        showToast('수정 완료', 'success');
+    }
+
+    function closeQueueEditModal() {
+        const modal = document.getElementById('bulkEditModal');
+        if (modal) modal.style.display = 'none';
+        queueEditIdx = -1;
+    }
+
+    function addQueueImage(idx) {
+        document.getElementById('queueEditFileInput').click();
+    }
+
+    async function handleQueueImageAdd(idx) {
+        const fileInput = document.getElementById('queueEditFileInput');
+        const files = fileInput.files;
+        if (!files || files.length === 0) return;
+
+        const formData = new FormData();
+        for (const f of files) formData.append('images', f);
+
+        try {
+            showToast('이미지 업로드 중...', 'info');
+            const res = await fetch('/api/bulk/upload-images', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '업로드 실패');
+
+            const item = bulkQueue[idx];
+            item.imageUrls.push(...data.urls);
+            showToast(`이미지 ${data.urls.length}장 추가됨`, 'success');
+            openQueueEditModal(idx); // 모달 새로고침
+        } catch (e) {
+            showToast('이미지 업로드 실패: ' + e.message, 'error');
+        }
+        fileInput.value = '';
+    }
+
+    function removeQueueImage(idx, imgIdx) {
+        const item = bulkQueue[idx];
+        item.imageUrls.splice(imgIdx, 1);
+        if (item.imageUrls.length === 0) {
+            showToast('이미지가 최소 1장 필요합니다.', 'warning');
+            return;
+        }
+        openQueueEditModal(idx); // 모달 새로고침
     }
 
     function removeBulkQueueItem(idx) {
