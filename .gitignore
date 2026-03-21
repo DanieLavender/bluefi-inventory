@@ -2,6 +2,7 @@ node_modules/
 inventory.db
 inventory_data.json
 *.xlsx
+!ExcelSaveTemplate_20260309.xlsx
 .env
 .claude/
 inventory.html

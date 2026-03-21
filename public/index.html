@@ -1720,6 +1720,64 @@
         .copy-history-channel {
             font-size:11px; padding:2px 8px; border-radius:10px; font-weight:600; flex-shrink:0;
         }
+
+        /* ===== Bulk Registration ===== */
+        .copy-tabs { display:flex; border-bottom:2px solid var(--border); margin-bottom:16px; }
+        .copy-tab {
+            flex:1; padding:12px 16px; font-size:14px; font-weight:600; text-align:center;
+            cursor:pointer; color:var(--text-muted); border:none; border-bottom:2px solid transparent;
+            margin-bottom:-2px; transition:all 0.15s; background:none;
+        }
+        .copy-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+        .copy-tab:hover:not(.active) { color:var(--text-primary); background:#F3F4F6; }
+        .bulk-dropzone {
+            border:2px dashed var(--border); border-radius:var(--radius-md); padding:32px;
+            text-align:center; cursor:pointer; transition:all 0.15s; min-height:100px;
+            display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+        }
+        .bulk-dropzone.dragover { border-color:var(--accent); background:rgba(37,99,235,0.04); }
+        .bulk-dropzone.has-images { padding:12px; min-height:auto; }
+        .bulk-preview-grid { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+        .bulk-preview-item {
+            position:relative; width:64px; height:64px; border-radius:var(--radius-sm);
+            overflow:hidden; border:1px solid var(--border);
+        }
+        .bulk-preview-item img { width:100%; height:100%; object-fit:cover; }
+        .bulk-preview-item .badge-rep {
+            position:absolute; bottom:0; left:0; right:0; background:var(--accent);
+            color:white; font-size:9px; text-align:center; padding:1px 0;
+        }
+        .bulk-preview-item .btn-remove {
+            position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%;
+            background:rgba(0,0,0,0.5); color:white; font-size:12px; line-height:18px;
+            text-align:center; cursor:pointer; border:none; padding:0; display:none;
+        }
+        .bulk-preview-item:hover .btn-remove { display:block; }
+        .bulk-color-btn {
+            padding:4px 12px; border-radius:16px; border:1px solid var(--border);
+            font-size:12px; cursor:pointer; transition:all 0.12s; background:#f9fafb;
+        }
+        .bulk-color-btn.selected { background:var(--accent); color:white; border-color:var(--accent); }
+        .bulk-color-btn:hover:not(.selected) { background:#EFF6FF; border-color:var(--accent); }
+        .bulk-queue-item {
+            display:flex; gap:12px; align-items:center; padding:10px 12px;
+            background:var(--bg-card); border:1px solid var(--border);
+            border-radius:var(--radius-md); margin-bottom:6px;
+        }
+        .bulk-queue-thumb { width:44px; height:44px; object-fit:cover; border-radius:var(--radius-sm); flex-shrink:0; }
+        .bulk-queue-info { flex:1; min-width:0; }
+        .bulk-queue-name { font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .bulk-queue-meta { font-size:11px; color:var(--text-tertiary); margin-top:2px; }
+        .bulk-color-tag {
+            display:inline-block; padding:1px 8px; font-size:11px; border-radius:10px;
+            background:#EFF6FF; color:var(--accent); margin:1px;
+        }
+        .bulk-settings-grid {
+            display:grid; grid-template-columns:1fr 1fr; gap:12px;
+        }
+        @media (max-width:768px) {
+            .bulk-settings-grid { grid-template-columns:1fr; }
+        }
     </style>
 </head>
 <body>
@@ -2118,6 +2176,14 @@
 
             <!-- ===== PAGE: Product Copy ===== -->
             <section class="page-section" id="page-copy" style="display:none">
+                <!-- 탭 바 -->
+                <div class="copy-tabs">
+                    <button class="copy-tab active" data-tab="copy" onclick="switchCopyTab('copy')">상품 복사</button>
+                    <button class="copy-tab" data-tab="bulk" onclick="switchCopyTab('bulk')">대량 등록</button>
+                </div>
+
+                <!-- 탭1: 기존 상품 복사 -->
+                <div id="copyTabCopy">
                 <!-- 인덱스 상태 -->
                 <div class="shell-card" style="margin-bottom:16px;" id="indexStatusCard">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -2200,6 +2266,137 @@
                         <p style="text-align:center;color:var(--text-secondary);padding:20px 0;font-size:13px;">페이지 진입 시 자동 로드됩니다</p>
                     </div>
                 </div>
+                </div><!-- /copyTabCopy -->
+
+                <!-- 탭2: 대량 등록 -->
+                <div id="copyTabBulk" style="display:none">
+                    <!-- 제목 + 설정 버튼 -->
+                    <div class="shell-card" style="margin-bottom:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-size:15px;font-weight:600;">대량 등록 엑셀 생성기</span>
+                            <button class="btn btn-outline btn-sm" onclick="toggleBulkSettings()">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                                템플릿 설정
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 템플릿 설정 패널 (숨김) -->
+                    <div class="shell-card" id="bulkSettingsPanel" style="display:none;margin-bottom:16px;">
+                        <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;">템플릿 설정</h3>
+                        <div class="bulk-settings-grid">
+                            <div>
+                                <h4 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary);">FTP 설정</h4>
+                                <div class="form-group"><label>호스트</label><input type="text" id="bulkCfgFtpHost" class="form-input" placeholder="ftp.example.com"></div>
+                                <div class="form-group"><label>포트</label><input type="number" id="bulkCfgFtpPort" class="form-input" value="21"></div>
+                                <div class="form-group"><label>계정</label><input type="text" id="bulkCfgFtpUser" class="form-input"></div>
+                                <div class="form-group"><label>비밀번호</label><input type="password" id="bulkCfgFtpPass" class="form-input"></div>
+                                <div class="form-group"><label>FTP 경로</label><input type="text" id="bulkCfgFtpPath" class="form-input" placeholder="/images/"></div>
+                                <div class="form-group"><label>이미지 URL 베이스</label><input type="text" id="bulkCfgFtpUrlBase" class="form-input" placeholder="http://example.com/images/"></div>
+                            </div>
+                            <div>
+                                <h4 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary);">상품 기본값</h4>
+                                <div class="form-group"><label>카테고리코드</label><input type="text" id="bulkCfgCategory" class="form-input" placeholder="50003307"></div>
+                                <div class="form-group"><label>원산지코드</label><input type="text" id="bulkCfgOrigin" class="form-input" placeholder="0200 (중국)"></div>
+                                <div class="form-group"><label>배송비 템플릿코드</label><input type="text" id="bulkCfgDelivery" class="form-input" placeholder="판매자센터에서 확인"></div>
+                                <div class="form-group"><label>상품정보제공고시 템플릿코드</label><input type="text" id="bulkCfgProductInfo" class="form-input" placeholder="판매자센터에서 확인"></div>
+                                <div class="form-group"><label>A/S 템플릿코드</label><input type="text" id="bulkCfgAs" class="form-input" placeholder="판매자센터에서 확인"></div>
+                                <div class="form-group"><label>A/S 전화번호</label><input type="text" id="bulkCfgAsPhone" class="form-input" placeholder="010-0000-0000"></div>
+                                <div class="form-group"><label>A/S 안내</label><input type="text" id="bulkCfgAsInfo" class="form-input" placeholder="카카오톡 채널 문의"></div>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-top:12px;">
+                            <label>자주 쓰는 컬러 (쉼표 구분)</label>
+                            <input type="text" id="bulkCfgColors" class="form-input" placeholder="아이보리,블랙,베이지,그레이,크림,브라운,네이비,카키,화이트,핑크">
+                        </div>
+                        <div style="text-align:right;margin-top:12px;">
+                            <button class="btn btn-accent" onclick="saveBulkConfig()">설정 저장</button>
+                        </div>
+                    </div>
+
+                    <!-- 기본값 바 -->
+                    <div class="shell-card" style="margin-bottom:16px;">
+                        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+                            <div style="flex:0 0 120px;">
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">기본 가격</label>
+                                <input type="number" id="bulkDefaultPrice" class="form-input" value="29900" style="text-align:right;">
+                            </div>
+                            <div style="flex:0 0 80px;">
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">기본 수량</label>
+                                <input type="number" id="bulkDefaultQty" class="form-input" value="5" style="text-align:right;">
+                            </div>
+                            <div style="flex:1;min-width:200px;">
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">빠른 컬러 선택</label>
+                                <div id="bulkQuickColors" style="display:flex;gap:4px;flex-wrap:wrap;">
+                                    <!-- JS에서 렌더링 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 상품 입력 카드 -->
+                    <div class="shell-card" style="margin-bottom:16px;">
+                        <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;">상품 추가</h3>
+                        <!-- 드래그&드롭 영역 -->
+                        <div class="bulk-dropzone" id="bulkDropzone">
+                            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#9CA3AF" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            <p style="margin:0;color:var(--text-secondary);font-size:13px;">이미지를 드래그하거나 클릭하여 선택</p>
+                            <p style="margin:0;color:var(--text-tertiary);font-size:11px;">JPG/PNG, 최대 20장</p>
+                            <input type="file" id="bulkFileInput" multiple accept="image/*" style="display:none">
+                        </div>
+                        <div class="bulk-preview-grid" id="bulkImagePreview"></div>
+
+                        <div style="margin-top:12px;">
+                            <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">상품명 *</label>
+                            <input type="text" id="bulkProductName" class="form-input" placeholder="예: hm 캐시미어 울 라운드니트"
+                                onkeydown="if(event.key==='Enter'){event.preventDefault();addToBulkQueue();}">
+                        </div>
+                        <div style="margin-top:8px;">
+                            <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">
+                                선택된 컬러 <span id="bulkColorCount" style="color:var(--text-tertiary);">(0)</span>
+                            </label>
+                            <div id="bulkSelectedColorsDisplay" style="min-height:24px;display:flex;gap:4px;flex-wrap:wrap;">
+                                <span style="font-size:12px;color:var(--text-tertiary);">위에서 컬러 버튼을 클릭하세요</span>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:8px;">
+                            <div style="flex:1;">
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">판매가 (빈칸이면 기본값)</label>
+                                <input type="number" id="bulkProductPrice" class="form-input" placeholder="기본값 사용">
+                            </div>
+                            <div style="flex:0 0 80px;">
+                                <label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:4px;">수량</label>
+                                <input type="number" id="bulkProductQty" class="form-input" placeholder="기본값">
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
+                            <button class="btn btn-outline" onclick="resetBulkInput()">초기화</button>
+                            <button class="btn btn-accent" onclick="addToBulkQueue()">+ 대기열에 추가</button>
+                        </div>
+                    </div>
+
+                    <!-- 대기열 -->
+                    <div class="shell-card" style="margin-bottom:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <h3 style="font-size:14px;font-weight:600;margin:0;">
+                                대기열 <span id="bulkQueueCount" style="color:var(--text-muted);font-weight:400;">(0건)</span>
+                            </h3>
+                            <button class="btn btn-outline btn-sm" onclick="clearBulkQueue()" id="bulkClearBtn" style="display:none;">전체 삭제</button>
+                        </div>
+                        <div id="bulkQueueList">
+                            <p style="text-align:center;color:var(--text-secondary);padding:20px 0;font-size:13px;">
+                                상품을 추가하면 여기에 표시됩니다
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 엑셀 생성 버튼 -->
+                    <button class="btn btn-accent" style="width:100%;padding:14px;font-size:15px;"
+                        id="bulkGenerateBtn" onclick="generateBulkExcel()" disabled>
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        엑셀 생성 및 다운로드 (0개 상품)
+                    </button>
+                </div><!-- /copyTabBulk -->
             </section>
 
             <!-- ===== PAGE: Master Products ===== -->
@@ -5970,6 +6167,298 @@
         updateCopySelectedCount();
         const st = await checkIndexStatus();
         if (st && st.indexing) startIndexPolling();
+        initBulkDropzone();
+    }
+
+    // ===== 대량 등록 (Bulk Registration) =====
+    let bulkQueue = [];
+    let bulkSelectedColors = [];
+    let bulkImageFiles = [];
+    let bulkConfigLoaded = false;
+
+    function switchCopyTab(tab) {
+        document.querySelectorAll('.copy-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+        document.getElementById('copyTabCopy').style.display = tab === 'copy' ? '' : 'none';
+        document.getElementById('copyTabBulk').style.display = tab === 'bulk' ? '' : 'none';
+        if (tab === 'bulk' && !bulkConfigLoaded) loadBulkConfig();
+    }
+
+    async function loadBulkConfig() {
+        try {
+            const cfg = await api('/api/bulk/config');
+            bulkConfigLoaded = true;
+            // FTP 설정 채우기
+            if (cfg.bulk_ftp_host) document.getElementById('bulkCfgFtpHost').value = cfg.bulk_ftp_host;
+            if (cfg.bulk_ftp_port) document.getElementById('bulkCfgFtpPort').value = cfg.bulk_ftp_port;
+            if (cfg.bulk_ftp_user) document.getElementById('bulkCfgFtpUser').value = cfg.bulk_ftp_user;
+            if (cfg.bulk_ftp_password) document.getElementById('bulkCfgFtpPass').value = cfg.bulk_ftp_password;
+            if (cfg.bulk_ftp_path) document.getElementById('bulkCfgFtpPath').value = cfg.bulk_ftp_path;
+            if (cfg.bulk_ftp_url_base) document.getElementById('bulkCfgFtpUrlBase').value = cfg.bulk_ftp_url_base;
+            // 상품 기본값
+            if (cfg.bulk_category_code) document.getElementById('bulkCfgCategory').value = cfg.bulk_category_code;
+            if (cfg.bulk_origin_code) document.getElementById('bulkCfgOrigin').value = cfg.bulk_origin_code;
+            if (cfg.bulk_delivery_template_code) document.getElementById('bulkCfgDelivery').value = cfg.bulk_delivery_template_code;
+            if (cfg.bulk_product_info_code) document.getElementById('bulkCfgProductInfo').value = cfg.bulk_product_info_code;
+            if (cfg.bulk_as_template_code) document.getElementById('bulkCfgAs').value = cfg.bulk_as_template_code;
+            if (cfg.bulk_as_phone) document.getElementById('bulkCfgAsPhone').value = cfg.bulk_as_phone;
+            if (cfg.bulk_as_info) document.getElementById('bulkCfgAsInfo').value = cfg.bulk_as_info;
+            // 기본가격/수량
+            if (cfg.bulk_default_price) document.getElementById('bulkDefaultPrice').value = cfg.bulk_default_price;
+            if (cfg.bulk_default_qty) document.getElementById('bulkDefaultQty').value = cfg.bulk_default_qty;
+            // 컬러
+            const colors = cfg.bulk_frequent_colors || '아이보리,블랙,베이지,그레이,크림,브라운,네이비,카키,화이트,핑크';
+            document.getElementById('bulkCfgColors').value = colors;
+            renderBulkQuickColors(colors);
+        } catch (e) {
+            console.log('bulk config load error:', e);
+            // 기본 컬러 렌더링
+            renderBulkQuickColors('아이보리,블랙,베이지,그레이,크림,브라운,네이비,카키,화이트,핑크');
+        }
+    }
+
+    async function saveBulkConfig() {
+        const data = {
+            bulk_ftp_host: document.getElementById('bulkCfgFtpHost').value,
+            bulk_ftp_port: document.getElementById('bulkCfgFtpPort').value,
+            bulk_ftp_user: document.getElementById('bulkCfgFtpUser').value,
+            bulk_ftp_password: document.getElementById('bulkCfgFtpPass').value,
+            bulk_ftp_path: document.getElementById('bulkCfgFtpPath').value,
+            bulk_ftp_url_base: document.getElementById('bulkCfgFtpUrlBase').value,
+            bulk_category_code: document.getElementById('bulkCfgCategory').value,
+            bulk_origin_code: document.getElementById('bulkCfgOrigin').value,
+            bulk_delivery_template_code: document.getElementById('bulkCfgDelivery').value,
+            bulk_product_info_code: document.getElementById('bulkCfgProductInfo').value,
+            bulk_as_template_code: document.getElementById('bulkCfgAs').value,
+            bulk_as_phone: document.getElementById('bulkCfgAsPhone').value,
+            bulk_as_info: document.getElementById('bulkCfgAsInfo').value,
+            bulk_default_price: document.getElementById('bulkDefaultPrice').value,
+            bulk_default_qty: document.getElementById('bulkDefaultQty').value,
+            bulk_frequent_colors: document.getElementById('bulkCfgColors').value,
+        };
+        try {
+            await api('/api/bulk/config', 'PUT', data);
+            showToast('템플릿 설정 저장 완료', 'success');
+            renderBulkQuickColors(data.bulk_frequent_colors);
+        } catch (e) {
+            showToast('저장 실패: ' + e.message, 'error');
+        }
+    }
+
+    function toggleBulkSettings() {
+        const panel = document.getElementById('bulkSettingsPanel');
+        panel.style.display = panel.style.display === 'none' ? '' : 'none';
+    }
+
+    function renderBulkQuickColors(colorsStr) {
+        const container = document.getElementById('bulkQuickColors');
+        const colors = (colorsStr || '').split(',').map(c => c.trim()).filter(Boolean);
+        container.innerHTML = colors.map(c =>
+            `<button class="bulk-color-btn${bulkSelectedColors.includes(c) ? ' selected' : ''}" onclick="toggleBulkColor('${c}')">${c}</button>`
+        ).join('');
+    }
+
+    function toggleBulkColor(color) {
+        const idx = bulkSelectedColors.indexOf(color);
+        if (idx >= 0) bulkSelectedColors.splice(idx, 1);
+        else bulkSelectedColors.push(color);
+        // 버튼 상태 업데이트
+        document.querySelectorAll('#bulkQuickColors .bulk-color-btn').forEach(btn => {
+            btn.classList.toggle('selected', bulkSelectedColors.includes(btn.textContent));
+        });
+        renderBulkSelectedColors();
+    }
+
+    function renderBulkSelectedColors() {
+        const container = document.getElementById('bulkSelectedColorsDisplay');
+        document.getElementById('bulkColorCount').textContent = `(${bulkSelectedColors.length})`;
+        if (bulkSelectedColors.length === 0) {
+            container.innerHTML = '<span style="font-size:12px;color:var(--text-tertiary);">위에서 컬러 버튼을 클릭하세요</span>';
+        } else {
+            container.innerHTML = bulkSelectedColors.map(c =>
+                `<span class="bulk-color-tag">${c}</span>`
+            ).join('');
+        }
+    }
+
+    function initBulkDropzone() {
+        const dropzone = document.getElementById('bulkDropzone');
+        const fileInput = document.getElementById('bulkFileInput');
+        if (!dropzone || !fileInput) return;
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            handleBulkFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', () => {
+            handleBulkFiles(fileInput.files);
+            fileInput.value = '';
+        });
+    }
+
+    function handleBulkFiles(fileList) {
+        for (const f of fileList) {
+            if (!f.type.startsWith('image/')) continue;
+            if (bulkImageFiles.length >= 20) break;
+            bulkImageFiles.push(f);
+        }
+        renderBulkImagePreview();
+    }
+
+    function renderBulkImagePreview() {
+        const container = document.getElementById('bulkImagePreview');
+        const dropzone = document.getElementById('bulkDropzone');
+        if (bulkImageFiles.length > 0) {
+            dropzone.classList.add('has-images');
+            dropzone.querySelector('svg').style.display = 'none';
+            dropzone.querySelectorAll('p').forEach(p => p.style.display = 'none');
+        } else {
+            dropzone.classList.remove('has-images');
+            dropzone.querySelector('svg').style.display = '';
+            dropzone.querySelectorAll('p').forEach(p => p.style.display = '');
+        }
+        container.innerHTML = bulkImageFiles.map((f, i) => {
+            const url = URL.createObjectURL(f);
+            return `<div class="bulk-preview-item">
+                <img src="${url}" alt="${f.name}">
+                ${i === 0 ? '<div class="badge-rep">대표</div>' : ''}
+                <button class="btn-remove" onclick="removeBulkImage(${i})">&times;</button>
+            </div>`;
+        }).join('');
+    }
+
+    function removeBulkImage(idx) {
+        bulkImageFiles.splice(idx, 1);
+        renderBulkImagePreview();
+    }
+
+    async function addToBulkQueue() {
+        const name = document.getElementById('bulkProductName').value.trim();
+        if (!name) { showToast('상품명을 입력해주세요.', 'warning'); return; }
+        if (bulkImageFiles.length === 0) { showToast('이미지를 추가해주세요.', 'warning'); return; }
+
+        const price = parseInt(document.getElementById('bulkProductPrice').value) || parseInt(document.getElementById('bulkDefaultPrice').value) || 29900;
+        const qty = parseInt(document.getElementById('bulkProductQty').value) || parseInt(document.getElementById('bulkDefaultQty').value) || 5;
+        const colors = [...bulkSelectedColors];
+
+        // 이미지 FTP 업로드
+        const formData = new FormData();
+        for (const f of bulkImageFiles) formData.append('images', f);
+
+        const addBtn = document.querySelector('#copyTabBulk .btn-accent[onclick="addToBulkQueue()"]');
+        addBtn.disabled = true;
+        addBtn.textContent = '업로드 중...';
+
+        try {
+            const res = await fetch('/api/bulk/upload-images', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '업로드 실패');
+
+            bulkQueue.push({
+                name, price, qty, colors,
+                imageUrls: data.urls,
+                thumbUrl: URL.createObjectURL(bulkImageFiles[0]),
+            });
+            renderBulkQueue();
+            resetBulkInput();
+            showToast(`"${name}" 대기열에 추가됨`, 'success');
+        } catch (e) {
+            showToast('이미지 업로드 실패: ' + e.message, 'error');
+        } finally {
+            addBtn.disabled = false;
+            addBtn.textContent = '+ 대기열에 추가';
+        }
+    }
+
+    function resetBulkInput() {
+        document.getElementById('bulkProductName').value = '';
+        document.getElementById('bulkProductPrice').value = '';
+        document.getElementById('bulkProductQty').value = '';
+        bulkImageFiles = [];
+        bulkSelectedColors = [];
+        renderBulkImagePreview();
+        renderBulkSelectedColors();
+        document.querySelectorAll('#bulkQuickColors .bulk-color-btn').forEach(btn => btn.classList.remove('selected'));
+        document.getElementById('bulkProductName').focus();
+    }
+
+    function renderBulkQueue() {
+        const container = document.getElementById('bulkQueueList');
+        const count = bulkQueue.length;
+        document.getElementById('bulkQueueCount').textContent = `(${count}건)`;
+        document.getElementById('bulkClearBtn').style.display = count > 0 ? '' : 'none';
+        const genBtn = document.getElementById('bulkGenerateBtn');
+        genBtn.disabled = count === 0;
+        genBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 엑셀 생성 및 다운로드 (${count}개 상품)`;
+
+        if (count === 0) {
+            container.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px 0;font-size:13px;">상품을 추가하면 여기에 표시됩니다</p>';
+            return;
+        }
+        container.innerHTML = bulkQueue.map((item, i) => `
+            <div class="bulk-queue-item">
+                <img src="${item.thumbUrl || item.imageUrls[0]}" class="bulk-queue-thumb" alt="">
+                <div class="bulk-queue-info">
+                    <div class="bulk-queue-name">${item.name}</div>
+                    <div class="bulk-queue-meta">
+                        ${Number(item.price).toLocaleString()}원 · ${item.qty}개
+                        ${item.colors.length > 0 ? ' · ' + item.colors.map(c => `<span class="bulk-color-tag">${c}</span>`).join('') : ''}
+                        · 이미지 ${item.imageUrls.length}장
+                    </div>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="removeBulkQueueItem(${i})" style="flex-shrink:0;padding:4px 8px;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+        `).join('');
+    }
+
+    function removeBulkQueueItem(idx) {
+        bulkQueue.splice(idx, 1);
+        renderBulkQueue();
+    }
+
+    function clearBulkQueue() {
+        if (!confirm(`대기열 ${bulkQueue.length}건을 모두 삭제하시겠습니까?`)) return;
+        bulkQueue = [];
+        renderBulkQueue();
+    }
+
+    async function generateBulkExcel() {
+        if (bulkQueue.length === 0) return;
+        const btn = document.getElementById('bulkGenerateBtn');
+        btn.disabled = true;
+        btn.textContent = '엑셀 생성 중...';
+
+        try {
+            const res = await fetch('/api/bulk/generate-excel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ products: bulkQueue }),
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || '엑셀 생성 실패');
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `bulk_upload_${new Date().toISOString().slice(0,10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(`${bulkQueue.length}개 상품 엑셀 생성 완료`, 'success');
+        } catch (e) {
+            showToast('엑셀 생성 실패: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            renderBulkQueue();
+        }
     }
 
     async function searchStoreAProducts() {

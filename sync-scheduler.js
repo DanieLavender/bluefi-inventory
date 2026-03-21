@@ -604,13 +604,27 @@ class SyncScheduler {
       copyData.originProduct.statusType = bSaleStatus;
 
       const optInfo = copyData.originProduct?.detailAttribute?.optionInfo;
-      if (optInfo?.optionCombinations && optionName) {
-        for (const opt of optInfo.optionCombinations) {
-          const combinedName = [opt.optionName1, opt.optionName2, opt.optionName3]
-            .filter(Boolean).join('/');
-          if (combinedName === optionName || opt.optionName1 === optionName) {
-            opt.stockQuantity = qty;
-            break;
+      if (optInfo && optionName) {
+        // optionCombinations에서 매칭되는 옵션에 수량 설정
+        if (optInfo.optionCombinations) {
+          for (const opt of optInfo.optionCombinations) {
+            const combinedName = [opt.optionName1, opt.optionName2, opt.optionName3]
+              .filter(Boolean).join('/');
+            if (combinedName === optionName || opt.optionName1 === optionName) {
+              opt.stockQuantity = qty;
+              break;
+            }
+          }
+        }
+        // optionStandards에서도 매칭되는 옵션에 수량 설정
+        if (optInfo.optionStandards) {
+          for (const opt of optInfo.optionStandards) {
+            const combinedName = [opt.optionName1, opt.optionName2, opt.optionName3]
+              .filter(Boolean).join('/');
+            if (combinedName === optionName || opt.optionName1 === optionName) {
+              opt.stockQuantity = qty;
+              break;
+            }
           }
         }
       }

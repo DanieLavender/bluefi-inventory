@@ -499,9 +499,23 @@ class NaverCommerceClient {
     if (origin.detailAttribute) {
       const da = origin.detailAttribute;
 
-      // B 스토어 상품은 옵션 없이 단순 상품으로 생성
-      // (standardOptionGroups를 포함하면 네이버 API가 A 스토어의 옵션별 재고를 자동 복사함)
+      // A 스토어 옵션 구조를 복사하되, 재고 수량만 0으로 초기화
+      // (sync-scheduler에서 반품 옵션에 맞는 수량을 별도 설정함)
       let optionInfo = undefined;
+      if (da.optionInfo) {
+        optionInfo = JSON.parse(JSON.stringify(da.optionInfo));
+        // 옵션별 재고를 모두 0으로 리셋 — 실제 수량은 호출측에서 설정
+        if (optionInfo.optionStandards) {
+          for (const opt of optionInfo.optionStandards) {
+            opt.stockQuantity = 0;
+          }
+        }
+        if (optionInfo.optionCombinations) {
+          for (const opt of optionInfo.optionCombinations) {
+            opt.stockQuantity = 0;
+          }
+        }
+      }
 
       // 카탈로그 매칭 해제 — A 스토어 재고가 B 상품에 연동되는 것 방지
       let searchInfo = da.naverShoppingSearchInfo ? { ...da.naverShoppingSearchInfo } : undefined;

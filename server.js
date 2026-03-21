@@ -7,9 +7,16 @@ const { NaverCommerceClient } = require('./smartstore');
 const { CoupangClient } = require('./coupang');
 const { ZigzagClient } = require('./zigzag');
 const webpush = require('web-push');
+const multer = require('multer');
+const ftp = require('basic-ftp');
+const XLSX = require('xlsx');
+const os = require('os');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const bulkUpload = multer({ dest: os.tmpdir(), limits: { fileSize: 10 * 1024 * 1024, files: 20 } });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -1721,6 +1728,19 @@ app.put('/api/sync/mappings/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/sync/mappings - B스토어 매핑 전체 초기화
+app.delete('/api/sync/mappings', async (req, res) => {
+  try {
+    const [mappingResult] = await Promise.all([
+      query('DELETE FROM product_mapping'),
+      query('DELETE FROM channel_product_mapping WHERE target_channel = ?', ['storeB']),
+    ]);
+    res.json({ deleted: mappingResult.affectedRows, message: '매핑 초기화 완료' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/sync/test-connection - 연결 테스트
 app.post('/api/sync/test-connection', async (req, res) => {
   const { store, clientId, clientSecret } = req.body;
@@ -2328,6 +2348,242 @@ app.post('/api/push/test', async (req, res) => {
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// === Bulk Registration (대량 등록) ===
+
+// GET /api/bulk/config - 대량등록 템플릿 설정 조회
+app.get('/api/bulk/config', async (req, res) => {
+  try {
+    const rows = await query("SELECT `key`, value FROM sync_config WHERE `key` LIKE 'bulk_%'");
+    const config = {};
+    for (const row of rows) {
+      config[row.key] = row.value;
+    }
+    // FTP 비밀번호 마스킹
+    if (config.bulk_ftp_password) {
+      const pw = config.bulk_ftp_password;
+      config.bulk_ftp_password = pw.length > 4 ? '****' + pw.slice(-4) : '****';
+    }
+    res.json(config);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/bulk/config - 대량등록 템플릿 설정 저장
+app.put('/api/bulk/config', async (req, res) => {
+  try {
+    const entries = req.body;
+    if (!entries || typeof entries !== 'object') {
+      return res.status(400).json({ error: '설정 데이터가 필요합니다.' });
+    }
+    const pool = getPool();
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      for (const [key, value] of Object.entries(entries)) {
+        if (!key.startsWith('bulk_')) continue;
+        // 마스킹된 비밀번호는 무시
+        if (key === 'bulk_ftp_password' && value && value.startsWith('****')) continue;
+        await conn.query(
+          "INSERT INTO sync_config (`key`, value, updated_at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()",
+          [key, value || '']
+        );
+      }
+      await conn.commit();
+      res.json({ success: true });
+    } finally {
+      conn.release();
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/bulk/upload-images - 이미지 업로드 → FTP 전송 → URL 반환
+app.post('/api/bulk/upload-images', bulkUpload.array('images', 20), async (req, res) => {
+  const tempFiles = (req.files || []).map(f => f.path);
+  try {
+    // FTP 설정 읽기
+    const configRows = await query("SELECT `key`, value FROM sync_config WHERE `key` LIKE 'bulk_ftp_%'");
+    const cfg = {};
+    for (const r of configRows) cfg[r.key] = r.value;
+
+    const ftpHost = cfg.bulk_ftp_host;
+    const ftpPort = parseInt(cfg.bulk_ftp_port) || 21;
+    const ftpUser = cfg.bulk_ftp_user;
+    const ftpPass = cfg.bulk_ftp_password;
+    const ftpPath = cfg.bulk_ftp_path || '/';
+    const ftpUrlBase = cfg.bulk_ftp_url_base || '';
+
+    if (!ftpHost || !ftpUser || !ftpPass) {
+      return res.status(400).json({ error: 'FTP 설정이 필요합니다. 템플릿 설정에서 FTP 정보를 입력해주세요.' });
+    }
+
+    const client = new ftp.Client();
+    client.ftp.verbose = false;
+    try {
+      await client.access({ host: ftpHost, port: ftpPort, user: ftpUser, password: ftpPass, secure: false });
+      await client.ensureDir(ftpPath);
+
+      const urls = [];
+      const timestamp = Date.now();
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+        const remoteName = `bulk_${timestamp}_${String(i + 1).padStart(2, '0')}${ext}`;
+        const remotePath = `${ftpPath}/${remoteName}`.replace(/\/+/g, '/');
+
+        await client.uploadFrom(file.path, remotePath);
+        const url = `${ftpUrlBase.replace(/\/$/, '')}/${remoteName}`;
+        urls.push(url);
+      }
+      client.close();
+      res.json({ urls });
+    } catch (ftpErr) {
+      client.close();
+      throw new Error(`FTP 업로드 실패: ${ftpErr.message}`);
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  } finally {
+    // 임시 파일 정리
+    for (const f of tempFiles) {
+      fs.unlink(f, () => {});
+    }
+  }
+});
+
+// POST /api/bulk/generate-excel - 대량등록 엑셀 생성
+app.post('/api/bulk/generate-excel', async (req, res) => {
+  try {
+    const { products } = req.body;
+    if (!products || !Array.isArray(products) || products.length === 0) {
+      return res.status(400).json({ error: '상품 데이터가 필요합니다.' });
+    }
+
+    // 템플릿 설정 읽기
+    const configRows = await query("SELECT `key`, value FROM sync_config WHERE `key` LIKE 'bulk_%'");
+    const cfg = {};
+    for (const r of configRows) cfg[r.key] = r.value;
+
+    // 원본 엑셀 템플릿 읽기
+    const templatePath = path.join(__dirname, 'ExcelSaveTemplate_20260309.xlsx');
+    const templateWb = XLSX.readFile(templatePath);
+    const templateWs = templateWb.Sheets[templateWb.SheetNames[0]];
+    const templateData = XLSX.utils.sheet_to_json(templateWs, { header: 1, defval: '' });
+
+    // 행0: 그룹헤더, 행1: 컬럼명, 행2: 필수여부 → 유지 (행3~5: 예시/도움말 → 제거하고 데이터로 대체)
+    const headerRows = templateData.slice(0, 3);
+
+    // 상품 데이터 행 생성
+    const dataRows = [];
+    for (const product of products) {
+      const row = new Array(93).fill('');
+
+      // [0] 판매자 상품코드 — 선택
+      // [1] 카테고리코드 — 필수
+      row[1] = cfg.bulk_category_code || '';
+      // [2] 상품명 — 필수
+      row[2] = product.name || '';
+      // [3] 상품상태
+      row[3] = '신상품';
+      // [4] 판매가 — 필수
+      row[4] = product.price || '';
+      // [9] 부가세
+      row[9] = cfg.bulk_tax_type || '과세상품';
+      // [11] 재고수량 — 필수
+      row[11] = product.qty || cfg.bulk_default_qty || 5;
+
+      // 옵션 (컬러)
+      const colors = product.colors || [];
+      if (colors.length > 0) {
+        row[12] = '단독형';  // 옵션형태
+        row[13] = '색상';     // 옵션명
+        row[14] = colors.join(',');  // 옵션값
+        // 옵션 재고수량: 각 컬러별 동일하게 분배
+        const perColorQty = Math.max(1, Math.floor((product.qty || cfg.bulk_default_qty || 5) / colors.length));
+        row[16] = colors.map(() => perColorQty).join(',');
+      }
+
+      // [22] 대표이미지 — 필수
+      const imageUrls = product.imageUrls || [];
+      if (imageUrls.length > 0) {
+        row[22] = imageUrls[0];
+      }
+      // [23] 추가이미지 (줄바꿈 구분, 최대 9장)
+      if (imageUrls.length > 1) {
+        row[23] = imageUrls.slice(1, 10).join('\n');
+      }
+
+      // [24] 상세설명 — 이미지 나열 HTML 자동 생성
+      const detailImages = imageUrls.map(url =>
+        `<img src="${url}" style="max-width:860px;width:100%;" />`
+      ).join('<br/>');
+      row[24] = `<div style="text-align:center;max-width:860px;margin:0 auto;">${detailImages}</div>`;
+
+      // [29] 원산지코드 — 필수
+      row[29] = cfg.bulk_origin_code || '0200';
+      // [31] 복수원산지여부
+      row[31] = 'N';
+      // [33] 미성년자 구매
+      row[33] = 'Y';
+
+      // 배송 정보
+      if (cfg.bulk_delivery_template_code) {
+        row[34] = cfg.bulk_delivery_template_code;
+      } else {
+        row[35] = cfg.bulk_delivery_method || '택배, 소포, 등기';
+        row[36] = cfg.bulk_courier_code || '';
+        row[37] = cfg.bulk_delivery_fee_type || '무료';
+        row[38] = cfg.bulk_delivery_fee || '';
+        row[39] = cfg.bulk_delivery_payment || '';
+        row[40] = cfg.bulk_free_condition || '';
+        row[46] = cfg.bulk_return_fee || '2500';
+        row[47] = cfg.bulk_exchange_fee || '2500';
+      }
+
+      // 상품정보제공고시 템플릿코드
+      if (cfg.bulk_product_info_code) {
+        row[50] = cfg.bulk_product_info_code;
+      }
+
+      // A/S 정보
+      if (cfg.bulk_as_template_code) {
+        row[55] = cfg.bulk_as_template_code;
+      } else {
+        row[56] = cfg.bulk_as_phone || '';
+        row[57] = cfg.bulk_as_info || '';
+      }
+
+      dataRows.push(row);
+    }
+
+    // 엑셀 생성 (헤더 3행 + 데이터)
+    const output = [...headerRows, ...dataRows];
+    const ws = XLSX.utils.aoa_to_sheet(output);
+
+    // 컬럼 너비 설정
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 12 }, { wch: 30 }, { wch: 8 }, { wch: 10 },
+      { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, { wch: 8 },
+      { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 20 },
+      { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 15 },
+      { wch: 10 }, { wch: 10 }, { wch: 40 }, { wch: 40 }, { wch: 50 },
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '일괄등록');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=bulk_upload_${new Date().toISOString().slice(0,10)}.xlsx`);
+    res.send(buffer);
+  } catch (e) {
+    console.error('[대량등록] 엑셀 생성 오류:', e);
     res.status(500).json({ error: e.message });
   }
 });
