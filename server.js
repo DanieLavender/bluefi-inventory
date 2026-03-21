@@ -2476,8 +2476,9 @@ app.post('/api/bulk/generate-excel', async (req, res) => {
     const templateWs = templateWb.Sheets[templateWb.SheetNames[0]];
     const templateData = XLSX.utils.sheet_to_json(templateWs, { header: 1, defval: '' });
 
-    // 행0: 그룹헤더, 행1: 컬럼명, 행2: 필수여부 → 유지 (행3~5: 예시/도움말 → 제거하고 데이터로 대체)
-    const headerRows = templateData.slice(0, 3);
+    // 행0: 그룹헤더, 행1: 컬럼명만 유지 (행2: 필수여부, 행3~5: 예시/도움말 → 제거)
+    // 네이버 대량등록은 행1(컬럼명) 다음부터 데이터로 인식
+    const headerRows = templateData.slice(0, 2);
 
     // 상품 데이터 행 생성
     const dataRows = [];
@@ -2526,7 +2527,7 @@ app.post('/api/bulk/generate-excel', async (req, res) => {
       row[24] = `<div style="text-align:center;max-width:860px;margin:0 auto;">${detailImages}</div>`;
 
       // [29] 원산지코드 — 필수
-      row[29] = cfg.bulk_origin_code || '0200';
+      row[29] = cfg.bulk_origin_code || '00';
       // [31] 복수원산지여부
       row[31] = 'N';
       // [33] 미성년자 구매
@@ -2551,12 +2552,18 @@ app.post('/api/bulk/generate-excel', async (req, res) => {
         row[50] = cfg.bulk_product_info_code;
       }
 
-      // A/S 정보
+      // A/S 정보 — 템플릿코드가 없으면 전화번호/안내 직접 입력 (필수)
       if (cfg.bulk_as_template_code) {
         row[55] = cfg.bulk_as_template_code;
-      } else {
-        row[56] = cfg.bulk_as_phone || '';
-        row[57] = cfg.bulk_as_info || '';
+      }
+      row[56] = cfg.bulk_as_phone || '01046680439';
+      row[57] = cfg.bulk_as_info || '상세 참조';
+
+      // 수입산인 경우 수입국/수입사 필수 (원산지코드 02xx = 수입산)
+      const originCode = row[29] || '';
+      if (originCode.startsWith('02') || originCode.startsWith('03')) {
+        row[30] = cfg.bulk_importer || '상세설명참조';  // 수입사
+        row[32] = cfg.bulk_origin_text || '';           // 원산지 직접입력
       }
 
       dataRows.push(row);
