@@ -2412,12 +2412,12 @@ app.post('/api/bulk/upload-images', bulkUpload.array('images', 20), async (req, 
     const cfg = {};
     for (const r of configRows) cfg[r.key] = r.value;
 
-    const ftpHost = cfg.bulk_ftp_host;
-    const ftpPort = parseInt(cfg.bulk_ftp_port) || 21;
-    const ftpUser = cfg.bulk_ftp_user;
-    const ftpPass = cfg.bulk_ftp_password;
-    const ftpPath = cfg.bulk_ftp_path || '/';
-    const ftpUrlBase = cfg.bulk_ftp_url_base || '';
+    const ftpHost = process.env.BULK_FTP_HOST || cfg.bulk_ftp_host;
+    const ftpPort = parseInt(process.env.BULK_FTP_PORT || cfg.bulk_ftp_port) || 21;
+    const ftpUser = process.env.BULK_FTP_USER || cfg.bulk_ftp_user;
+    const ftpPass = process.env.BULK_FTP_PASSWORD || cfg.bulk_ftp_password;
+    const ftpPath = process.env.BULK_FTP_PATH || cfg.bulk_ftp_path || '/';
+    const ftpUrlBase = process.env.BULK_FTP_URL_BASE || cfg.bulk_ftp_url_base || '';
 
     if (!ftpHost || !ftpUser || !ftpPass) {
       return res.status(400).json({ error: 'FTP 설정이 필요합니다. 템플릿 설정에서 FTP 정보를 입력해주세요.' });
