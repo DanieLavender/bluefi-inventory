@@ -6236,7 +6236,7 @@
             bulk_frequent_colors: document.getElementById('bulkCfgColors').value,
         };
         try {
-            await api('/api/bulk/config', 'PUT', data);
+            await api('/api/bulk/config', { method: 'PUT', body: JSON.stringify(data) });
             showToast('템플릿 설정 저장 완료', 'success');
             renderBulkQuickColors(data.bulk_frequent_colors);
         } catch (e) {
