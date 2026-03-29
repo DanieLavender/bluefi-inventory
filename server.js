@@ -2841,35 +2841,40 @@ function maskSecret(str) {
 }
 
 async function initSyncClients() {
-  if (scheduler.hasClients()) return;
-  const getVal = async (key) => {
-    const rows = await query('SELECT value FROM sync_config WHERE `key` = ?', [key]);
-    return rows[0] ? rows[0].value : '';
-  };
-  const aId = process.env.STORE_A_CLIENT_ID || await getVal('store_a_client_id');
-  const aSecret = process.env.STORE_A_CLIENT_SECRET || await getVal('store_a_client_secret');
-  const bId = process.env.STORE_B_CLIENT_ID || await getVal('store_b_client_id');
-  const bSecret = process.env.STORE_B_CLIENT_SECRET || await getVal('store_b_client_secret');
-  if (!aId || !aSecret || !bId || !bSecret) {
-    throw new Error('스토어 A/B API 키가 설정되지 않았습니다. Settings에서 입력해주세요.');
+  if (!scheduler.hasClients()) {
+    const getVal = async (key) => {
+      const rows = await query('SELECT value FROM sync_config WHERE `key` = ?', [key]);
+      return rows[0] ? rows[0].value : '';
+    };
+    const aId = process.env.STORE_A_CLIENT_ID || await getVal('store_a_client_id');
+    const aSecret = process.env.STORE_A_CLIENT_SECRET || await getVal('store_a_client_secret');
+    const bId = process.env.STORE_B_CLIENT_ID || await getVal('store_b_client_id');
+    const bSecret = process.env.STORE_B_CLIENT_SECRET || await getVal('store_b_client_secret');
+    if (!aId || !aSecret || !bId || !bSecret) {
+      throw new Error('스토어 A/B API 키가 설정되지 않았습니다. Settings에서 입력해주세요.');
+    }
+    scheduler.initClients(aId, aSecret, bId, bSecret);
   }
-  scheduler.initClients(aId, aSecret, bId, bSecret);
 
-  // 쿠팡/지그재그 클라이언트도 scheduler에 전달
-  try {
-    const coupang = await initCoupangClient();
-    if (coupang) {
-      scheduler.setCoupangClient(coupang);
-      console.log('[Sync] 쿠팡 클라이언트 연결됨');
-    }
-  } catch (e) { console.log('[Sync] 쿠팡 클라이언트 초기화 실패:', e.message); }
-  try {
-    const zigzag = await initZigzagClient();
-    if (zigzag) {
-      scheduler.setZigzagClient(zigzag);
-      console.log('[Sync] 지그재그 클라이언트 연결됨');
-    }
-  } catch (e) { console.log('[Sync] 지그재그 클라이언트 초기화 실패:', e.message); }
+  // 쿠팡/지그재그 클라이언트도 scheduler에 전달 (아직 없으면)
+  if (!scheduler.coupangClient) {
+    try {
+      const coupang = await initCoupangClient();
+      if (coupang) {
+        scheduler.setCoupangClient(coupang);
+        console.log('[Sync] 쿠팡 클라이언트 연결됨');
+      }
+    } catch (e) { console.log('[Sync] 쿠팡 클라이언트 초기화 실패:', e.message); }
+  }
+  if (!scheduler.zigzagClient) {
+    try {
+      const zigzag = await initZigzagClient();
+      if (zigzag) {
+        scheduler.setZigzagClient(zigzag);
+        console.log('[Sync] 지그재그 클라이언트 연결됨');
+      }
+    } catch (e) { console.log('[Sync] 지그재그 클라이언트 초기화 실패:', e.message); }
+  }
 }
 
 async function initCoupangClient() {
