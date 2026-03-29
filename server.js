@@ -551,6 +551,23 @@ app.post('/api/master/import-from-store-a', async (req, res) => {
 
 // --- API Routes ---
 
+// POST /api/deploy - 원격 배포 (git pull + 재���작)
+app.post('/api/deploy', async (req, res) => {
+  const { execSync } = require('child_process');
+  try {
+    const pullResult = execSync('git pull', { encoding: 'utf8', cwd: __dirname, timeout: 30000 }).trim();
+    console.log(`[Deploy] git pull: ${pullResult}`);
+    if (pullResult.includes('Already up to date')) {
+      return res.json({ status: 'no_change', message: pullResult });
+    }
+    res.json({ status: 'updating', message: pullResult });
+    // PM2가 자동 재시작
+    setTimeout(() => process.exit(0), 500);
+  } catch (e) {
+    res.status(500).json({ status: 'error', message: e.message });
+  }
+});
+
 // GET /api/health - 헬스체크 (서버 keep-alive용)
 app.get('/api/health', async (req, res) => {
   const status = await scheduler.getStatus();
