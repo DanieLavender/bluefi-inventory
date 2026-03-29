@@ -22,6 +22,9 @@ class SyncScheduler {
     this.storeB = new NaverCommerceClient(storeBId, storeBSecret, 'Store-B');
   }
 
+  setCoupangClient(client) { this.coupangClient = client; }
+  setZigzagClient(client) { this.zigzagClient = client; }
+
   hasClients() {
     return !!(this.storeA && this.storeB);
   }
@@ -127,10 +130,20 @@ class SyncScheduler {
       if (returnedOrderIds.length === 0) {
         console.log('[Sync] 반품 관련 건 없음');
         await this.logSync(runId, 'return_detect', 'A', null, null, null,
-          `조회 기간: ${fromStr.slice(0,16)} ~ ${toStr.slice(0,16)}`, null, 0, 'success', '반품 관련 건 없음');
+          `조회 기간: ${fromStr.slice(0,16)} ~ ${toStr.slice(0,16)}`, null, 0, 'success', '네이버 반품 관련 건 없음');
         await this.setConfig('last_sync_time', toStr);
 
-        // 반품 없어도 매출 수집은 항상 실행
+        // 네이버 반품 없어도 쿠팡/지그재그 반품은 조회
+        try {
+          const extResult = await this.processExternalReturns(runId, fromStr, toStr);
+          result.detected += extResult.detected;
+          result.processed += extResult.processed;
+          result.errors += extResult.errors;
+        } catch (extErr) {
+          console.error('[Sync] 외부 채널 반품 처리 오류:', extErr.message);
+        }
+
+        // 매출 수집은 항상 실행
         try {
           await this.fetchSalesData(runId);
         } catch (salesErr) {
@@ -180,6 +193,16 @@ class SyncScheduler {
       }
 
       await this.setConfig('last_sync_time', toStr);
+
+      // 쿠팡/지그재그 반품 → inventory 재고 반영
+      try {
+        const extResult = await this.processExternalReturns(runId, fromStr, toStr);
+        result.detected += extResult.detected;
+        result.processed += extResult.processed;
+        result.errors += extResult.errors;
+      } catch (extErr) {
+        console.error('[Sync] 외부 채널 반품 처리 오류:', extErr.message);
+      }
 
       // 매출 데이터 자동 수집
       try {
@@ -260,6 +283,70 @@ class SyncScheduler {
     } catch (invErr) {
       console.error(`[Sync→Inventory] 재고 반영 실패 (무시): ${invErr.message}`);
     }
+  }
+
+  // === 쿠팡/지그재그 반품 → inventory 재고 반영 ===
+
+  async processExternalReturns(runId, fromStr, toStr) {
+    const result = { detected: 0, processed: 0, errors: 0 };
+    const channels = [
+      { name: '쿠팡', client: this.coupangClient },
+      { name: '지그재그', client: this.zigzagClient },
+    ];
+
+    for (const { name, client } of channels) {
+      if (!client) continue;
+
+      let returns = [];
+      try {
+        returns = await client.getReturnRequests(fromStr, toStr);
+      } catch (e) {
+        console.log(`[Sync] ${name} 반품 조회 실패 (무시): ${e.message}`);
+        continue;
+      }
+
+      if (returns.length === 0) {
+        console.log(`[Sync] ${name} 반품 건 없음`);
+        continue;
+      }
+
+      console.log(`[Sync] ${name} 반품 ${returns.length}건 감지`);
+      await this.logSync(runId, 'return_detect', name, null, null, null,
+        `${name} 반품 ${returns.length}건 감지`, null, returns.length, 'success');
+      result.detected += returns.length;
+
+      for (const ret of returns) {
+        for (const item of (ret.returnItems || [])) {
+          const productName = item.vendorItemName || item.sellerProductItemName || '';
+          const optionName = item.sellerProductItemName || '';
+          const qty = item.returnQuantity || 1;
+          const orderId = `${name}_${ret.receiptId}_${item.vendorItemId || ''}`;
+
+          try {
+            const invResult = await this.updateInventoryFromReturn(
+              runId, orderId, null, productName, optionName, qty
+            );
+            if (invResult && invResult.action !== 'skipped') {
+              result.processed++;
+              const invMsg = invResult.action === 'created'
+                ? `[${name}] 신규 재고: ${invResult.name} (${invResult.color}) ${invResult.qty}개`
+                : `[${name}] 재고 반영: ${productName} (${optionName || ''}) +${qty}개`;
+              await this.sendPushNotification(`${name} 반품 재고 반영`, invMsg);
+            } else if (invResult && invResult.action === 'skipped') {
+              // 이미 처리됨 — 에러 아님
+            }
+          } catch (e) {
+            result.errors++;
+            await this.logSync(runId, 'error', name, null, orderId, null,
+              productName, optionName, 0, 'fail', `${name} 재고 반영 오류: ${e.message}`);
+            console.error(`[Sync] ${name} 반품 재고 반영 오류: ${productName}`, e.message);
+          }
+          await this.sleep(200);
+        }
+      }
+    }
+
+    return result;
   }
 
   // === Update inventory from return ===

@@ -2854,6 +2854,22 @@ async function initSyncClients() {
     throw new Error('스토어 A/B API 키가 설정되지 않았습니다. Settings에서 입력해주세요.');
   }
   scheduler.initClients(aId, aSecret, bId, bSecret);
+
+  // 쿠팡/지그재그 클라이언트도 scheduler에 전달
+  try {
+    const coupang = await initCoupangClient();
+    if (coupang) {
+      scheduler.setCoupangClient(coupang);
+      console.log('[Sync] 쿠팡 클라이언트 연결됨');
+    }
+  } catch (e) { console.log('[Sync] 쿠팡 클라이언트 초기화 실패:', e.message); }
+  try {
+    const zigzag = await initZigzagClient();
+    if (zigzag) {
+      scheduler.setZigzagClient(zigzag);
+      console.log('[Sync] 지그재그 클라이언트 연결됨');
+    }
+  } catch (e) { console.log('[Sync] 지그재그 클라이언트 초기화 실패:', e.message); }
 }
 
 async function initCoupangClient() {
