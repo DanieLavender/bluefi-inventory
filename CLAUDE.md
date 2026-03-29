@@ -123,10 +123,12 @@ ag, ed, hm, ig, it, lc, ls, mo, mu, mv, ov, ps, ru, sm, ve, vi
 - 각 브랜드별 고유 색상 배지 (brandColors 객체에 정의)
 
 ## 배포
-- **render.yaml** 설정 완료
-- Render.com에서 GitHub 연결 → 자동 배포
-- Build: `npm install` / Start: `node server.js`
-- 환경변수: `NODE_ENV=production`, PORT는 Render가 자동 설정
+- **호스팅**: KT클라우드 서버 (cosguardian.lavenderfriends.co.kr / 211.251.237.46)
+- **OS**: Windows Server 2019 / Node.js v22.17.0 / Git 2.53.0
+- **포트**: 3001 (TCP)
+- **접속**: `http://cosguardian.lavenderfriends.co.kr:3001`
+- **실행**: `cd C:\bluefi-inventory && node server.js`
+- **render.yaml**: Render.com 이전 설정 (참고용, 현재 미사용)
 
 ## Git 컨벤션
 - 커밋 메시지: 한글, 첫 줄 요약 + 본문 상세

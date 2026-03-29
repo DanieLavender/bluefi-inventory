@@ -14,7 +14,7 @@ const os = require('os');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 const bulkUpload = multer({ dest: os.tmpdir(), limits: { fileSize: 10 * 1024 * 1024, files: 20 } });
 
@@ -2864,21 +2864,11 @@ async function initZigzagClient() {
 
 // Initialize DB and start server
 (async () => {
-  // 포트를 먼저 열어서 Render 타임아웃 방지
   app.listen(PORT, () => {
     console.log(`블루파이 재고관리 서버 실행중: http://localhost:${PORT}`);
 
     // 자동 인덱싱 시작 (6시간마다 새 상품 체크)
     startAutoIndexing();
-
-    // Render 무료 플랜 keep-alive: 14분마다 self-ping으로 spin-down 방지
-    if (process.env.RENDER_EXTERNAL_URL || process.env.NODE_ENV === 'production') {
-      const url = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-      setInterval(() => {
-        fetch(`${url}/api/health`).catch(() => {});
-      }, 14 * 60 * 1000);
-      console.log('[KeepAlive] 14분 간격 self-ping 활성화');
-    }
   });
 
   // DB 초기화 (포트 열린 후 백그라운드)
@@ -2908,19 +2898,20 @@ async function initZigzagClient() {
 
   // 앱 업데이트 감지 → 푸시 알림 (커밋 메시지 포함)
   try {
-    const currentVersion = process.env.RENDER_GIT_COMMIT || null;
+    const { execSync } = require('child_process');
+    let currentVersion = null;
+    try {
+      currentVersion = execSync('git rev-parse HEAD', { encoding: 'utf8', cwd: __dirname }).trim();
+    } catch (e) {
+      // git 미설치 또는 .git 없는 환경
+    }
     if (currentVersion) {
       const storedVersion = await scheduler.getConfig('app_version');
       if (storedVersion !== currentVersion) {
         const shortHash = currentVersion.slice(0, 7);
-        // GitHub API에서 커밋 메시지 가져오기
         let commitMsg = '';
         try {
-          const res = await fetch(`https://api.github.com/repos/DanieLavender/bluefi-inventory/commits/${currentVersion}`);
-          if (res.ok) {
-            const data = await res.json();
-            commitMsg = (data.commit?.message || '').split('\n')[0]; // 첫 줄만
-          }
+          commitMsg = execSync('git log -1 --pretty=%s', { encoding: 'utf8', cwd: __dirname }).trim();
         } catch (e) {
           console.log('[Update] 커밋 메시지 조회 실패:', e.message);
         }
@@ -2939,7 +2930,7 @@ async function initZigzagClient() {
       }
       await scheduler.setConfig('app_version', currentVersion);
     } else {
-      console.log('[Update] RENDER_GIT_COMMIT 미설정');
+      console.log('[Update] git 정보 없음 (버전 감지 스킵)');
     }
   } catch (e) {
     console.log('[Update] 버전 확인 오류:', e.message);
