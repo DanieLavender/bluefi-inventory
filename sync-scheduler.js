@@ -604,27 +604,38 @@ class SyncScheduler {
       copyData.originProduct.statusType = bSaleStatus;
 
       const optInfo = copyData.originProduct?.detailAttribute?.optionInfo;
-      if (optInfo && optionName) {
-        // optionCombinations에서 매칭되는 옵션에 수량 설정
-        if (optInfo.optionCombinations) {
+      if (optInfo) {
+        let matched = false;
+
+        if (optionName && optInfo.optionCombinations) {
           for (const opt of optInfo.optionCombinations) {
             const combinedName = [opt.optionName1, opt.optionName2, opt.optionName3]
               .filter(Boolean).join('/');
             if (combinedName === optionName || opt.optionName1 === optionName) {
               opt.stockQuantity = qty;
+              matched = true;
               break;
             }
           }
         }
-        // optionStandards에서도 매칭되는 옵션에 수량 설정
-        if (optInfo.optionStandards) {
+        if (optionName && optInfo.optionStandards) {
           for (const opt of optInfo.optionStandards) {
             const combinedName = [opt.optionName1, opt.optionName2, opt.optionName3]
               .filter(Boolean).join('/');
             if (combinedName === optionName || opt.optionName1 === optionName) {
               opt.stockQuantity = qty;
+              matched = true;
               break;
             }
+          }
+        }
+
+        // 매칭 실패 또는 옵션명 없음 → 첫 번째 옵션에 수량 부여 (재고 0 등록 방지)
+        if (!matched) {
+          const firstOpt = (optInfo.optionCombinations || [])[0] || (optInfo.optionStandards || [])[0];
+          if (firstOpt) {
+            firstOpt.stockQuantity = qty;
+            console.log(`[Sync] 옵션 매칭 실패, 첫 번째 옵션에 수량 ${qty} 설정: ${productName} (반품옵션: ${optionName || '없음'})`);
           }
         }
       }
