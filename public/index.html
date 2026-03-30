@@ -3284,8 +3284,8 @@
                 const colorDot = colorHex
                     ? `<span class="color-dot" style="background:${colorHex}"></span>`
                     : '';
-                const upd = formatUpdatedAt(item.updated_at);
-                const updHtml = item.updated_at
+                const upd = formatUpdatedAt(item.updated_at || item.created_at);
+                const updHtml = (item.updated_at || item.created_at)
                     ? `<span class="date-text ${upd.isRecent ? 'recent' : ''}">${upd.timeText}</span>`
                     : '<span style="color:var(--text-muted);font-size:12px;">-</span>';
                 const qtyClass = item.qty === 0 ? 'qty-value qty-zero' : 'qty-value';
@@ -3326,8 +3326,8 @@
                     ? `<span class="color-dot" style="background:${colorHex}"></span>`
                     : '';
                 const qtyStyle = item.qty === 0 ? 'color:var(--danger);font-weight:700' : '';
-                const upd = formatUpdatedAt(item.updated_at);
-                const updHtml = item.updated_at
+                const upd = formatUpdatedAt(item.updated_at || item.created_at);
+                const updHtml = (item.updated_at || item.created_at)
                     ? `<span class="date-text ${upd.isRecent ? 'recent' : ''}">${upd.timeText}</span>`
                     : '';
 
@@ -3410,7 +3410,7 @@
                 group.variants.forEach(item => {
                     const colorHex = getColorHex(item.color);
                     const colorDot = colorHex ? `<span class="color-dot" style="background:${colorHex}"></span>` : '';
-                    const upd = formatUpdatedAt(item.updated_at);
+                    const upd = formatUpdatedAt(item.updated_at || item.created_at);
                     const updHtml = item.updated_at
                         ? `<span class="date-text ${upd.isRecent ? 'recent' : ''}">${upd.timeText}</span>`
                         : '<span style="color:var(--text-muted);font-size:12px;">-</span>';
@@ -3473,7 +3473,7 @@
                     const colorHex = getColorHex(item.color);
                     const colorDot = colorHex ? `<span class="color-dot" style="background:${colorHex}"></span>` : '';
                     const qtyStyle = item.qty === 0 ? 'color:var(--danger);font-weight:700' : '';
-                    const upd = formatUpdatedAt(item.updated_at);
+                    const upd = formatUpdatedAt(item.updated_at || item.created_at);
                     const updHtml = item.updated_at
                         ? `<span class="date-text ${upd.isRecent ? 'recent' : ''}" style="font-size:11px;margin-left:auto;margin-right:6px;">${upd.timeText}</span>`
                         : '';
