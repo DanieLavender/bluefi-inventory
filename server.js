@@ -602,7 +602,7 @@ app.get('/api/inventory', async (req, res) => {
     const total = countRows[0].total;
 
     // Sort
-    let orderBy = 'ORDER BY id ASC';
+    let orderBy = 'ORDER BY COALESCE(updated_at, created_at) DESC';
     if (sort === 'name-asc') orderBy = 'ORDER BY name ASC';
     else if (sort === 'name-desc') orderBy = 'ORDER BY name DESC';
     else if (sort === 'qty-asc') orderBy = 'ORDER BY qty ASC';
