@@ -2826,8 +2826,34 @@
         <div class="modal">
             <h2>상품 수정</h2>
             <div class="form-group">
-                <label>상품명</label>
-                <input type="text" id="editName">
+                <label>상품 ID</label>
+                <input type="text" id="editChannelProductNo" placeholder="네이버 상품번호">
+            </div>
+            <div class="form-group">
+                <label>브랜드 *</label>
+                <select id="editBrand" onchange="toggleEditCustomBrand()">
+                    <option value="">-- 브랜드 선택 --</option>
+                </select>
+            </div>
+            <div class="form-group" id="editCustomBrandGroup" style="display:none;">
+                <label>브랜드 직접 입력</label>
+                <input type="text" id="editCustomBrand" placeholder="예: ab (영문 소문자)" maxlength="10">
+            </div>
+            <div class="form-group">
+                <label>상품명 *</label>
+                <input type="text" id="editName" placeholder="예: 캐시미어 울 라운드니트">
+            </div>
+            <div class="form-group">
+                <label>컬러 *</label>
+                <input type="text" id="editColor" placeholder="예: 아이보리">
+            </div>
+            <div class="form-group">
+                <label>사이즈</label>
+                <input type="text" id="editSize" placeholder="예: Free, S, M, L">
+            </div>
+            <div class="form-group">
+                <label>수량 *</label>
+                <input type="number" id="editQty" min="0" value="0">
             </div>
             <div class="modal-actions">
                 <button class="btn btn-outline" onclick="closeEditModal()">취소</button>
@@ -3088,11 +3114,57 @@
     }
 
     let editTargetId = null;
-    function openEditModal(id, name) {
+    async function openEditModal(id, name) {
         editTargetId = id;
-        document.getElementById('editName').value = name;
+        // 기존 데이터 불러오기
+        const items = currentData.filter(i => i.id === id);
+        const item = items.length > 0 ? items[0] : null;
+
+        // 브랜드 셀렉트 채우기
+        const editBrandSelect = document.getElementById('editBrand');
+        const brands = await api('/api/brands');
+        editBrandSelect.innerHTML = '<option value="">-- 브랜드 선택 --</option>';
+        brands.forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b;
+            opt.textContent = b.toUpperCase();
+            editBrandSelect.appendChild(opt);
+        });
+        const customOpt = document.createElement('option');
+        customOpt.value = '__custom__';
+        customOpt.textContent = '+ 직접 입력';
+        editBrandSelect.appendChild(customOpt);
+
+        if (item) {
+            // 상품명에서 브랜드 접두사 제거
+            const rawName = item.brand ? item.name.replace(new RegExp('^' + item.brand + '\\s*'), '') : item.name;
+            document.getElementById('editName').value = rawName;
+            document.getElementById('editColor').value = item.color || '';
+            document.getElementById('editSize').value = item.size || '';
+            document.getElementById('editQty').value = item.qty || 0;
+            document.getElementById('editChannelProductNo').value = item.channel_product_no || '';
+            // 브랜드 선택
+            const exists = [...editBrandSelect.options].some(o => o.value === item.brand);
+            if (item.brand && exists) {
+                editBrandSelect.value = item.brand;
+            } else if (item.brand) {
+                editBrandSelect.value = '__custom__';
+                document.getElementById('editCustomBrand').value = item.brand;
+            }
+        } else {
+            document.getElementById('editName').value = name || '';
+            document.getElementById('editColor').value = '';
+            document.getElementById('editSize').value = '';
+            document.getElementById('editQty').value = 0;
+            document.getElementById('editChannelProductNo').value = '';
+        }
+        toggleEditCustomBrand();
         document.getElementById('editModal').classList.add('active');
         lockBodyScroll();
+    }
+    function toggleEditCustomBrand() {
+        const val = document.getElementById('editBrand').value;
+        document.getElementById('editCustomBrandGroup').style.display = val === '__custom__' ? 'block' : 'none';
     }
     function closeEditModal() {
         document.getElementById('editModal').classList.remove('active');
@@ -3100,17 +3172,37 @@
         editTargetId = null;
     }
     async function submitEdit() {
-        const name = document.getElementById('editName').value.trim();
-        if (!name) { alert('상품명을 입력해주세요.'); return; }
+        const brandSelect = document.getElementById('editBrand').value;
+        const customBrand = document.getElementById('editCustomBrand').value.trim().toLowerCase();
+        const rawName = document.getElementById('editName').value.trim();
+        const color = document.getElementById('editColor').value.trim();
+        const size = document.getElementById('editSize').value.trim() || null;
+        const qty = parseInt(document.getElementById('editQty').value) || 0;
+        const channelProductNo = document.getElementById('editChannelProductNo').value.trim() || null;
+
+        let brand = '';
+        if (brandSelect === '__custom__') {
+            if (!customBrand) { showToast('브랜드를 입력해주세요.', 'error'); return; }
+            brand = customBrand;
+        } else if (brandSelect) {
+            brand = brandSelect;
+        } else {
+            showToast('브랜드를 선택해주세요.', 'error'); return;
+        }
+        if (!rawName) { showToast('상품명을 입력해주세요.', 'error'); return; }
+        if (!color) { showToast('컬러를 입력해주세요.', 'error'); return; }
+
+        const name = `${brand} ${rawName}`;
         try {
             const res = await fetch(`/api/inventory/${editTargetId}`, {
                 method: 'PUT', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ name })
+                body: JSON.stringify({ name, color, size, qty, brand, channel_product_no: channelProductNo })
             });
             if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
             closeEditModal();
+            showToast('수정되었습니다.', 'success');
             loadData();
-        } catch (e) { alert('수정 실패: ' + e.message); }
+        } catch (e) { showToast('수정 실패: ' + e.message, 'error'); }
     }
 
     function dropdownDelete() {

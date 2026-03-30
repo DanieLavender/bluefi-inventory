@@ -767,11 +767,11 @@ app.post('/api/inventory', async (req, res) => {
   }
 });
 
-// PUT /api/inventory/:id - 수량/상품명 수정
+// PUT /api/inventory/:id - 재고 수정 (전체 필드)
 app.put('/api/inventory/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { qty, name } = req.body;
+    const { qty, name, color, size, brand, channel_product_no } = req.body;
     const sets = [];
     const params = [];
     if (name !== undefined) {
@@ -779,13 +779,32 @@ app.put('/api/inventory/:id', async (req, res) => {
       if (!trimmed) return res.status(400).json({ error: '상품명을 입력해주세요.' });
       sets.push('name = ?');
       params.push(trimmed);
-      const newBrand = extractBrand(trimmed);
+      // brand가 명시적으로 전달되면 그 값 사용, 아니면 이름에서 추출
+      const newBrand = brand !== undefined ? brand : extractBrand(trimmed);
       sets.push('brand = ?');
       params.push(newBrand);
+    } else if (brand !== undefined) {
+      sets.push('brand = ?');
+      params.push(brand);
+    }
+    if (color !== undefined) {
+      sets.push('color = ?');
+      params.push(color.trim());
+    }
+    if (size !== undefined) {
+      sets.push('size = ?');
+      params.push(size ? size.trim() : null);
+    }
+    if (channel_product_no !== undefined) {
+      sets.push('channel_product_no = ?');
+      params.push(channel_product_no || null);
     }
     if (qty !== undefined) {
-      sets.push('qty = ?, updated_at = NOW()');
+      sets.push('qty = ?');
       params.push(Math.max(0, parseInt(qty) || 0));
+    }
+    if (sets.length > 0) {
+      sets.push('updated_at = NOW()');
     }
     if (sets.length === 0) {
       return res.status(400).json({ error: '변경할 항목이 없습니다.' });
