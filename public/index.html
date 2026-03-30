@@ -3117,7 +3117,7 @@
     async function openEditModal(id, name) {
         editTargetId = id;
         // 기존 데이터 불러오기
-        const items = currentData.filter(i => i.id === id);
+        const items = currentItems.filter(i => i.id === id);
         const item = items.length > 0 ? items[0] : null;
 
         // 브랜드 셀렉트 채우기
