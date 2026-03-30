@@ -315,35 +315,9 @@ class SyncScheduler {
         `${name} 반품 ${returns.length}건 감지`, null, returns.length, 'success');
       result.detected += returns.length;
 
-      for (const ret of returns) {
-        for (const item of (ret.returnItems || [])) {
-          const productName = item.vendorItemName || item.sellerProductItemName || '';
-          const optionName = item.sellerProductItemName || '';
-          const qty = item.returnQuantity || 1;
-          const orderId = `${name}_${ret.receiptId}_${item.vendorItemId || ''}`;
-
-          try {
-            const invResult = await this.updateInventoryFromReturn(
-              runId, orderId, null, productName, optionName, qty
-            );
-            if (invResult && invResult.action !== 'skipped') {
-              result.processed++;
-              const invMsg = invResult.action === 'created'
-                ? `[${name}] 신규 재고: ${invResult.name} (${invResult.color}) ${invResult.qty}개`
-                : `[${name}] 재고 반영: ${productName} (${optionName || ''}) +${qty}개`;
-              await this.sendPushNotification(`${name} 반품 재고 반영`, invMsg);
-            } else if (invResult && invResult.action === 'skipped') {
-              // 이미 처리됨 — 에러 아님
-            }
-          } catch (e) {
-            result.errors++;
-            await this.logSync(runId, 'error', name, null, orderId, null,
-              productName, optionName, 0, 'fail', `${name} 재고 반영 오류: ${e.message}`);
-            console.error(`[Sync] ${name} 반품 재고 반영 오류: ${productName}`, e.message);
-          }
-          await this.sleep(200);
-        }
-      }
+      // TODO: 쿠팡/지그재그 반품 → inventory 자동 반영은 비활성화 (데이터 파싱 문제로 잘못된 재고 생성됨)
+      // 반품 감지 로그만 남기고, inventory 추가는 하지 않음
+      console.log(`[Sync] ${name} 반품 ${returns.length}건 감지 — inventory 반영 비활성화 상태`);
     }
 
     return result;
@@ -352,7 +326,7 @@ class SyncScheduler {
   // === Update inventory from return ===
 
   async updateInventoryFromReturn(runId, productOrderId, channelProductNo, productName, optionName, qty) {
-    const color = (optionName || '').trim();
+    const color = (optionName || '').trim() || '기본';
     if (!productName) {
       console.log(`[Sync→Inventory] 상품명 없음, 스킵`);
       return null;
@@ -361,8 +335,9 @@ class SyncScheduler {
     try {
       // 0단계: productOrderId 중복 체크 — 이미 처리된 반품이면 스킵
       if (productOrderId) {
+        // sync_log에 성공/실패 무관하게 inventory_update 기록이 있으면 스킵
         const dupCheck = await query(
-          "SELECT id FROM sync_log WHERE type = 'inventory_update' AND product_order_id = ? AND status = 'success' LIMIT 1",
+          "SELECT id FROM sync_log WHERE type = 'inventory_update' AND product_order_id = ? LIMIT 1",
           [productOrderId]
         );
         if (dupCheck.length > 0) {
@@ -1315,7 +1290,7 @@ class SyncScheduler {
       INSERT INTO sync_log (run_id, type, store_from, store_to, product_order_id,
         channel_product_no, product_name, product_option, qty, status, message)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [runId, type, storeFrom, storeTo, productOrderId, channelProductNo,
+    `, [runId, type, storeFrom || '', storeTo || '', productOrderId, channelProductNo,
       productName, productOption, qty || 0, status, message || null]);
   }
 

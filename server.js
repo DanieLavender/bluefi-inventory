@@ -644,11 +644,67 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// GET /api/brands - 브랜드 목록
+// GET /api/brands - 브랜드 목록 (inventory + 커스텀 브랜드 병합)
 app.get('/api/brands', async (req, res) => {
   try {
     const rows = await query("SELECT DISTINCT brand FROM inventory WHERE brand != '' ORDER BY brand");
-    res.json(rows.map(r => r.brand));
+    const invBrands = rows.map(r => r.brand);
+    // 커스텀 브랜드 병합
+    const configRows = await query("SELECT `value` FROM sync_config WHERE `key` = 'custom_brands' LIMIT 1");
+    let customBrands = [];
+    if (configRows.length > 0 && configRows[0].value) {
+      try { customBrands = JSON.parse(configRows[0].value); } catch {}
+    }
+    const all = [...new Set([...invBrands, ...customBrands])].sort();
+    res.json(all);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/brands - 브랜드 추가
+app.post('/api/brands', async (req, res) => {
+  try {
+    const { brand } = req.body;
+    if (!brand || !brand.trim()) return res.status(400).json({ error: '브랜드 코드를 입력해주세요.' });
+    const code = brand.trim().toLowerCase();
+    // 기존 커스텀 브랜드 조회
+    const configRows = await query("SELECT `value` FROM sync_config WHERE `key` = 'custom_brands' LIMIT 1");
+    let customBrands = [];
+    if (configRows.length > 0 && configRows[0].value) {
+      try { customBrands = JSON.parse(configRows[0].value); } catch {}
+    }
+    // 이미 inventory에 있는지 확인
+    const existing = await query("SELECT brand FROM inventory WHERE brand = ? LIMIT 1", [code]);
+    if (existing.length > 0 || customBrands.includes(code)) {
+      return res.status(409).json({ error: '이미 존재하는 브랜드입니다.' });
+    }
+    customBrands.push(code);
+    await query("INSERT INTO sync_config (`key`, `value`) VALUES ('custom_brands', ?) ON DUPLICATE KEY UPDATE `value` = ?",
+      [JSON.stringify(customBrands), JSON.stringify(customBrands)]);
+    res.json({ success: true, brand: code });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/brands/:code - 브랜드 삭제
+app.delete('/api/brands/:code', async (req, res) => {
+  try {
+    const code = req.params.code.toLowerCase();
+    // inventory에 해당 브랜드 상품이 있으면 삭제 불가
+    const used = await query("SELECT COUNT(*) as cnt FROM inventory WHERE brand = ?", [code]);
+    if (used[0].cnt > 0) {
+      return res.status(400).json({ error: `해당 브랜드에 상품 ${used[0].cnt}개가 있어 삭제할 수 없습니다.` });
+    }
+    const configRows = await query("SELECT `value` FROM sync_config WHERE `key` = 'custom_brands' LIMIT 1");
+    let customBrands = [];
+    if (configRows.length > 0 && configRows[0].value) {
+      try { customBrands = JSON.parse(configRows[0].value); } catch {}
+    }
+    customBrands = customBrands.filter(b => b !== code);
+    await query("UPDATE sync_config SET `value` = ? WHERE `key` = 'custom_brands'", [JSON.stringify(customBrands)]);
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
