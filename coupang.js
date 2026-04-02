@@ -166,12 +166,27 @@ class CoupangClient {
 
   async getReturnRequests(fromDate, toDate) {
     const allReturns = [];
-    const from = this.formatCoupangDate(fromDate);
-    const to = this.formatCoupangDate(toDate);
     // 쿠팡 반품 상태별 조회 (status 필수, 허용값: RU/CC/PR/UC)
     // RU=출고중지요청, UC=반품접수, CC=수거완료, PR=입고완료
     // 응답의 receiptStatus는 RETURNS_COMPLETED 등 상세값으로 반환됨
     const statuses = ['UC', 'CC', 'PR'];
+
+    // 쿠팡 API는 조회 기간이 7일 초과하면 데이터 누락 → 7일 단위 분할 조회
+    const fromMs = new Date(fromDate).getTime();
+    const toMs = new Date(toDate).getTime();
+    const CHUNK_MS = 7 * 24 * 60 * 60 * 1000; // 7일
+    const chunks = [];
+    let chunkStart = fromMs;
+    while (chunkStart < toMs) {
+      const chunkEnd = Math.min(chunkStart + CHUNK_MS, toMs);
+      chunks.push({ from: new Date(chunkStart).toISOString(), to: new Date(chunkEnd).toISOString() });
+      chunkStart = chunkEnd;
+    }
+    console.log(`[${this.storeName}] 반품 조회: ${chunks.length}개 구간 분할 (${Math.round((toMs - fromMs) / 86400000)}일)`);
+
+    for (const chunk of chunks) {
+      const from = this.formatCoupangDate(chunk.from);
+      const to = this.formatCoupangDate(chunk.to);
 
     for (const status of statuses) {
       let nextToken = null;
@@ -222,8 +237,9 @@ class CoupangClient {
 
       await this.sleep(100);
     }
+    } // chunk 루프 끝
 
-    // receiptId 기준 중복 제거 (여러 status 쿼리에서 같은 건이 반환될 수 있음)
+    // receiptId 기준 중복 제거 (여러 status/구간 쿼리에서 같은 건이 반환될 수 있음)
     const seen = new Set();
     const unique = allReturns.filter(r => {
       if (seen.has(r.receiptId)) return false;
