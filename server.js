@@ -1301,6 +1301,13 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         }
 
         for (const ret of coupangReturns) {
+          // 출고중지요청(RU)은 주문취소 건이므로 반품 리스트에서 제외
+          const skipStatuses = ['RU', 'RELEASE_STOP_UNCHECKED'];
+          if (skipStatuses.includes(ret.receiptStatus)) {
+            console.log(`[Returnable] 쿠팡 출고중지(${ret.receiptStatus}) 건 제외: receiptId=${ret.receiptId}`);
+            continue;
+          }
+
           // 상태 매핑: 쿠팡 receiptStatus → 네이버 claimStatus 호환
           const statusMap = {
             'CNF': 'RETURN_DONE', 'RETURNS_COMPLETED': 'RETURN_DONE',
@@ -1308,7 +1315,6 @@ app.get('/api/sync/returnable-items', async (req, res) => {
             'REQUEST_COUPANG_CHECK': 'WAREHOUSE_CONFIRM',
             'CC': 'COLLECT_DONE', 'UNIT_COLLECTED': 'COLLECT_DONE',
             'UC': 'COLLECTING', 'RETURNS_UNCHECKED': 'COLLECTING',
-            'RU': 'COLLECTING', 'RELEASE_STOP_UNCHECKED': 'COLLECTING',
           };
           const claimStatus = statusMap[ret.receiptStatus] || 'COLLECTING';
 

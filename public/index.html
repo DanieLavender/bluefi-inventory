@@ -4151,6 +4151,7 @@
                     const added = item.alreadyAdded;
                     const confirmed = item.confirmedPickup;
                     const canConfirm = (st === 'COLLECT_DONE' || st === 'COLLECTING');
+                    const isReturnDone = (st === 'RETURN_DONE' || st === 'WAREHOUSE_CONFIRM');
                     let rowClass = 'return-item-row';
                     let btnHtml = '';
 
@@ -4159,19 +4160,20 @@
                         btnHtml = '<span class="return-added-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>추가완료</span>';
                     } else if (confirmed) {
                         btnHtml = `<span class="return-confirmed-label" onclick="cancelConfirmPickup('${item.productOrderId}', this)" title="클릭하여 취소">실수거완료됨</span>`;
-                    } else if (canConfirm) {
-                        btnHtml = `<button class="return-confirm-btn" onclick="confirmPickup('${item.productOrderId}', this)">실수거완료</button>`;
-                    } else if (st === 'RETURN_DONE' || st === 'WAREHOUSE_CONFIRM') {
-                        // 반품완료: 스토어 추가 + 재고 추가 분리
+                    } else if (isReturnDone) {
+                        // 반품완료/입고완료: 실수거완료 + 스토어 추가 + 재고 추가
                         const sDone = item.storeAdded;
                         const iDone = item.inventoryAdded;
+                        const confirmHtml = `<button class="return-confirm-btn" onclick="confirmPickup('${item.productOrderId}', this)">실수거완료</button>`;
                         const storeHtml = sDone
                             ? '<span class="return-done-tag"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>스토어</span>'
                             : `<button class="return-store-btn" onclick="copyToStore('${item.productOrderId}', this)">스토어 추가</button>`;
                         const invHtml = iDone
                             ? '<span class="return-done-tag"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>재고</span>'
                             : `<button class="return-add-btn" onclick="addFromRecentReturn('${item.productOrderId}', this)">재고 추가</button>`;
-                        btnHtml = `<div class="return-btn-group">${storeHtml}${invHtml}</div>`;
+                        btnHtml = `<div class="return-btn-group">${confirmHtml}${storeHtml}${invHtml}</div>`;
+                    } else if (canConfirm) {
+                        btnHtml = `<button class="return-confirm-btn" onclick="confirmPickup('${item.productOrderId}', this)">실수거완료</button>`;
                     }
 
                     html += `<div class="${rowClass}" data-order-id="${item.productOrderId}">
