@@ -199,23 +199,29 @@ class CoupangClient {
         if (!data || !data.data) break;
 
         for (const ret of data.data) {
-          // 첫 건만 키 로깅 (주문자명 필드 확인용)
-          if (allReturns.length === 0) {
-            console.log(`[${this.storeName}] 반품 raw 키:`, Object.keys(ret).join(', '));
+          // 디버그: 전체 raw 데이터 로깅 (출고중지 건 구분 필드 확인용)
+          if (allReturns.length < 3) {
+            console.log(`[${this.storeName}] 반품 raw[${allReturns.length}]:`, JSON.stringify(ret, null, 0).slice(0, 1500));
           }
           allReturns.push({
             receiptId: ret.receiptId,
             orderId: ret.orderId,
             receiptStatus: ret.receiptStatus || status,
+            releaseStatus: ret.releaseStatus || '',
+            cancelCount: ret.cancelCount || 0,
+            returnType: ret.returnType || '',
             buyerName: ret.buyerName || ret.ordererName || ret.requesterName || '',
             returnItems: (ret.returnItems || []).map(item => ({
               vendorItemId: String(item.vendorItemId || ''),
               vendorItemName: item.vendorItemName || '',
               returnQuantity: item.returnQuantity || 1,
               sellerProductItemName: item.sellerProductItemName || '',
+              cancelCount: item.cancelCount || 0,
+              purchaseCount: item.purchaseCount || 0,
               _raw: item,
             })),
             createdAt: ret.createdAt || '',
+            _raw: ret,
           });
         }
 

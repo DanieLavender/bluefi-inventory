@@ -1218,6 +1218,38 @@ app.post('/api/sales/fetch', async (req, res) => {
 
 // --- Sync API Routes ---
 
+// GET /api/sync/coupang-returns-debug - 쿠팡 반품 raw 데이터 확인용 (임시)
+app.get('/api/sync/coupang-returns-debug', async (req, res) => {
+  try {
+    await initSyncClients();
+    const coupangClient = await initCoupangClient();
+    if (!coupangClient) return res.json({ error: 'no coupang client' });
+    const hours = parseInt(req.query.hours) || 168;
+    const now = new Date();
+    const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
+    const returns = await coupangClient.getReturnRequests(from.toISOString(), now.toISOString());
+    res.json({
+      total: returns.length,
+      statusDist: returns.reduce((acc, r) => { acc[r.receiptStatus] = (acc[r.receiptStatus] || 0) + 1; return acc; }, {}),
+      items: returns.map(r => ({
+        receiptId: r.receiptId,
+        orderId: r.orderId,
+        receiptStatus: r.receiptStatus,
+        releaseStatus: r.releaseStatus,
+        returnType: r.returnType,
+        cancelCount: r.cancelCount,
+        buyerName: r.buyerName,
+        createdAt: r.createdAt,
+        itemNames: (r.returnItems || []).map(i => i.vendorItemName),
+        _rawKeys: r._raw ? Object.keys(r._raw) : [],
+        _rawSample: r._raw ? JSON.stringify(r._raw).slice(0, 500) : '',
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/sync/returnable-items - 네이버+쿠팡+지그재그 반품/수거 완료 건 목록 (이미 등록된 건도 표시)
 app.get('/api/sync/returnable-items', async (req, res) => {
   try {
@@ -1294,10 +1326,10 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         const cDist = {};
         for (const r of coupangReturns) { cDist[r.receiptStatus] = (cDist[r.receiptStatus] || 0) + 1; }
         console.log(`[Returnable] 쿠팡 receiptStatus 분포:`, JSON.stringify(cDist));
-        // 개별 아이템 로깅 (중복 확인용)
+        // 개별 아이템 로깅 (출고중지 구분 필드 확인용)
         for (const r of coupangReturns) {
           const itemNames = (r.returnItems || []).map(i => i.vendorItemName?.slice(0, 30)).join(', ');
-          console.log(`[Returnable] 쿠팡 개별: receiptId=${r.receiptId} status=${r.receiptStatus} items=[${itemNames}]`);
+          console.log(`[Returnable] 쿠팡 개별: receiptId=${r.receiptId} status=${r.receiptStatus} releaseStatus=${r.releaseStatus} returnType=${r.returnType} cancelCount=${r.cancelCount} buyer=${r.buyerName} items=[${itemNames}]`);
         }
 
         for (const ret of coupangReturns) {
