@@ -1331,17 +1331,14 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         const cDist = {};
         for (const r of coupangReturns) { cDist[r.receiptStatus] = (cDist[r.receiptStatus] || 0) + 1; }
         console.log(`[Returnable] 쿠팡 receiptStatus 분포:`, JSON.stringify(cDist));
-        // 개별 아이템 로깅 (출고중지 구분 필드 확인용)
-        for (const r of coupangReturns) {
-          const itemNames = (r.returnItems || []).map(i => i.vendorItemName?.slice(0, 30)).join(', ');
-          console.log(`[Returnable] 쿠팡 개별: receiptId=${r.receiptId} status=${r.receiptStatus} releaseStatus=${r.releaseStatus} returnType=${r.returnType} cancelCount=${r.cancelCount} buyer=${r.buyerName} items=[${itemNames}]`);
-        }
-
         for (const ret of coupangReturns) {
-          // 출고중지요청(RU)은 주문취소 건이므로 반품 리스트에서 제외
-          const skipStatuses = ['RU', 'RELEASE_STOP_UNCHECKED'];
-          if (skipStatuses.includes(ret.receiptStatus)) {
-            console.log(`[Returnable] 쿠팡 출고중지(${ret.receiptStatus}) 건 제외: receiptId=${ret.receiptId}`);
+          // 출고중지 건 필터링: receiptStatus가 RU이거나, releaseStopStatus가 출고중지 처리된 건 제외
+          // releaseStopStatus: '비대상'=실제 반품, '처리(출고중지)'=주문취소, '미처리'=출고중지 진행중
+          const rss = ret.releaseStopStatus || '';
+          const isReleaseStop = ['RU', 'RELEASE_STOP_UNCHECKED'].includes(ret.receiptStatus)
+            || rss.includes('출고중지') || rss === '미처리';
+          if (isReleaseStop) {
+            console.log(`[Returnable] 쿠팡 출고중지 건 제외: receiptId=${ret.receiptId} status=${ret.receiptStatus} releaseStop=${rss} buyer=${ret.buyerName}`);
             continue;
           }
 
