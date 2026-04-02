@@ -1242,7 +1242,12 @@ app.get('/api/sync/coupang-returns-debug', async (req, res) => {
         createdAt: r.createdAt,
         itemNames: (r.returnItems || []).map(i => i.vendorItemName),
         _rawKeys: r._raw ? Object.keys(r._raw) : [],
-        _rawSample: r._raw ? JSON.stringify(r._raw).slice(0, 500) : '',
+        _rawSample: r._raw ? JSON.stringify(r._raw).slice(0, 2000) : '',
+        releaseStopStatus: r._raw?.releaseStopStatus || '',
+        cancelCountSum: r._raw?.cancelCountSum ?? '',
+        completeConfirmType: r._raw?.completeConfirmType || '',
+        returnDeliveryType: r._raw?.returnDeliveryType || '',
+        faultByType: r._raw?.faultByType || '',
       })),
     });
   } catch (e) {
