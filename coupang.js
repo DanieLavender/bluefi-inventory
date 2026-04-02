@@ -168,9 +168,9 @@ class CoupangClient {
     const allReturns = [];
     const from = this.formatCoupangDate(fromDate);
     const to = this.formatCoupangDate(toDate);
-    // 쿠팡 반품 상태별 조회 (status 필수, 허용값: RU/CC/PR/UC)
-    // RU=출고중지요청, UC=반품접수, CC=수거완료, PR=입고완료(VENDOR_WAREHOUSE_CONFIRM)
-    const statuses = ['UC', 'CC', 'PR'];
+    // 쿠팡 반품 상태별 조회 (status 필수, 허용값: RU/CC/PR/UC/CNF)
+    // RU=출고중지요청, UC=반품접수, CC=수거완료, PR=입고완료, CNF=반품완료(환불완료)
+    const statuses = ['UC', 'CC', 'PR', 'CNF'];
 
     for (const status of statuses) {
       let nextToken = null;
