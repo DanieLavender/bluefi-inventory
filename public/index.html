@@ -3343,7 +3343,7 @@
     }
 
     // ===== API Calls =====
-    async function api(url, options = {}) {
+    window.api = async function api(url, options = {}) {
         const res = await fetch(url, {
             headers: { 'Content-Type': 'application/json' },
             ...options
