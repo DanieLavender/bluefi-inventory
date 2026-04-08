@@ -2566,7 +2566,7 @@
                         </div>
                         <div>
                             <div class="stat-value" id="seoStatAvg">-</div>
-                            <div class="stat-label">평균 SEO 점수</div>
+                            <div class="stat-label">평균 추정 점수</div>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -2617,7 +2617,7 @@
                 <!-- 상품 리스트 -->
                 <div class="shell-card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                        <h3 style="font-size:15px;font-weight:600;">상품별 SEO 분석</h3>
+                        <h3 style="font-size:15px;font-weight:600;">상품별 SEO 분석 <span style="font-size:11px;font-weight:400;color:var(--text-muted);">(추정 점수 · 클릭하면 정밀 분석)</span></h3>
                         <span id="seoProductCount" style="font-size:12px;color:var(--text-secondary);"></span>
                     </div>
                     <div id="seoProductList" style="min-height:200px;"></div>
@@ -7512,7 +7512,7 @@
                 const scoreBg = sc >= 85 ? '#F0FDF4' : sc >= 70 ? '#EFF6FF' : sc >= 55 ? '#FEF3C7' : '#FEE2E2';
                 const grade = sc >= 85 ? 'A' : sc >= 70 ? 'B' : sc >= 55 ? 'C' : sc >= 40 ? 'D' : 'F';
 
-                html += `<div style="display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border-light);border-radius:var(--radius-sm);background:white;cursor:pointer;transition:box-shadow 0.15s;" onclick="openSeoDetail('${item.channelProductNo}')" onmouseenter="this.style.boxShadow='var(--shadow-md)'" onmouseleave="this.style.boxShadow='none'">`;
+                html += `<div style="display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border-light);border-radius:var(--radius-sm);background:white;cursor:pointer;transition:box-shadow 0.15s;" onclick="openSeoDetail('${item.channelProductNo}', ${sc})" onmouseenter="this.style.boxShadow='var(--shadow-md)'" onmouseleave="this.style.boxShadow='none'">`;
 
                 // 이미지
                 if (item.imageUrl) {
@@ -7548,7 +7548,7 @@
                 </div>`;
 
                 // 상세 분석 버튼
-                html += `<button class="btn btn-outline btn-sm" style="flex-shrink:0;font-size:11px;padding:6px 10px;" onclick="event.stopPropagation();openSeoDetail('${item.channelProductNo}')">상세 분석</button>`;
+                html += `<button class="btn btn-outline btn-sm" style="flex-shrink:0;font-size:11px;padding:6px 10px;" onclick="event.stopPropagation();openSeoDetail('${item.channelProductNo}', ${sc})">정밀 분석</button>`;
 
                 html += '</div>';
             }
@@ -7579,14 +7579,15 @@
         container.innerHTML = html;
     }
 
-    window.openSeoDetail = async function(channelProductNo) {
+    window.openSeoDetail = async function(channelProductNo, estimatedScore) {
         const overlay = document.getElementById('seoDetailOverlay');
         const content = document.getElementById('seoDetailContent');
         overlay.style.display = 'flex';
-        content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">네이버 API에서 상품 정보를 가져와 분석 중... (5~10초 소요)</div>';
+        content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">네이버 API에서 상품 정보를 가져와 정밀 분석 중... (5~10초 소요)</div>';
 
         try {
             const data = await api(`/api/seo/analyze/${channelProductNo}`);
+            data._estimatedScore = estimatedScore || null;
             content.innerHTML = renderSeoDetail(data);
         } catch (e) {
             content.innerHTML = `<div style="text-align:center;padding:40px;color:#DC2626;">분석 실패: ${e.message}</div>`;
@@ -7605,7 +7606,9 @@
         html += `<div style="text-align:center;margin-bottom:24px;">
             <div style="width:80px;height:80px;border-radius:50%;background:${gb};color:${gc};display:inline-flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;border:3px solid ${gc};">${data.totalScore}</div>
             <div style="font-size:18px;font-weight:700;margin-top:8px;">등급 ${data.grade}</div>
-            <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;max-width:500px;margin-left:auto;margin-right:auto;word-break:break-all;">${data.productName}</div>
+            <div style="font-size:11px;color:var(--accent);margin-top:4px;padding:3px 10px;background:var(--accent-light);border-radius:4px;display:inline-block;">네이버 API 정밀 분석 결과</div>
+            ${data._estimatedScore != null ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">리스트 추정 점수: <strong>${data._estimatedScore}점</strong> → 정밀 분석: <strong style="color:${gc};">${data.totalScore}점</strong></div>` : ''}
+            <div style="font-size:13px;color:var(--text-secondary);margin-top:8px;max-width:500px;margin-left:auto;margin-right:auto;word-break:break-all;">${data.productName}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">채널상품번호: ${data.channelProductNo}</div>
         </div>`;
 
