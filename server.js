@@ -3593,9 +3593,41 @@ app.get('/api/seo/analyze/:channelProductNo', async (req, res) => {
     const cpNo = req.params.channelProductNo;
     console.log(`[SEO] 상세 분석 요청: ${cpNo}`);
 
-    const v2Product = await scheduler.storeA.getChannelProduct(cpNo);
+    let v2Product = null;
+
+    // 1차: channelProductNo로 조회
+    try {
+      v2Product = await scheduler.storeA.getChannelProduct(cpNo);
+    } catch (e) {
+      console.log(`[SEO] channelProductNo ${cpNo} 조회 실패, originProductNo로 재시도: ${e.message}`);
+    }
+
+    // 2차: originProductNo로 조회 (DB에서 origin_product_no 확인)
     if (!v2Product) {
-      return res.status(404).json({ error: '상품을 찾을 수 없습니다' });
+      const rows = await query(
+        'SELECT origin_product_no FROM store_a_products WHERE channel_product_no = ?', [cpNo]
+      );
+      const originNo = rows[0]?.origin_product_no;
+      if (originNo && originNo !== cpNo) {
+        try {
+          v2Product = await scheduler.storeA.getOriginProduct(originNo);
+        } catch (e2) {
+          console.log(`[SEO] originProductNo ${originNo}도 조회 실패: ${e2.message}`);
+        }
+      }
+    }
+
+    // 3차: cpNo 자체를 originProductNo로 시도
+    if (!v2Product) {
+      try {
+        v2Product = await scheduler.storeA.getOriginProduct(cpNo);
+      } catch (e3) {
+        // 최종 실패
+      }
+    }
+
+    if (!v2Product) {
+      return res.status(404).json({ error: '상품을 찾을 수 없습니다 (channel/origin 모두 조회 실패)' });
     }
 
     const analysis = analyzeProductSeo(v2Product);
