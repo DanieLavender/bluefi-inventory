@@ -7627,7 +7627,7 @@
                 html += '</div>';
 
                 // 점수 뱃지
-                html += `<div style="flex-shrink:0;text-align:center;">
+                html += `<div id="seo-badge-${item.channelProductNo}" style="flex-shrink:0;text-align:center;">
                     <div style="width:44px;height:44px;border-radius:50%;background:${scoreBg};color:${scoreColor};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">${sc}</div>
                     <div style="font-size:10px;color:${scoreColor};font-weight:600;margin-top:2px;">${grade} ${item.isEstimate ? '(추정)' : '(정밀)'}</div>
                 </div>`;
@@ -7674,6 +7674,16 @@
             const data = await api(`/api/seo/analyze/${channelProductNo}`);
             data._estimatedScore = estimatedScore || null;
             content.innerHTML = renderSeoDetail(data);
+
+            // 리스트 아이템 점수를 정밀 분석 결과로 즉시 갱신
+            const badge = document.getElementById('seo-badge-' + channelProductNo);
+            if (badge && data.totalScore !== undefined) {
+                const sc = data.totalScore;
+                const scoreColor = sc >= 85 ? '#16A34A' : sc >= 70 ? '#2563EB' : sc >= 55 ? '#F59E0B' : '#DC2626';
+                const scoreBg = sc >= 85 ? '#F0FDF4' : sc >= 70 ? '#EFF6FF' : sc >= 55 ? '#FEF3C7' : '#FEE2E2';
+                const grade = sc >= 85 ? 'A' : sc >= 70 ? 'B' : sc >= 55 ? 'C' : sc >= 40 ? 'D' : 'F';
+                badge.innerHTML = `<div style="width:44px;height:44px;border-radius:50%;background:${scoreBg};color:${scoreColor};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">${sc}</div><div style="font-size:10px;color:${scoreColor};font-weight:600;margin-top:2px;">${grade} (정밀)</div>`;
+            }
         } catch (e) {
             content.innerHTML = `<div style="text-align:center;padding:40px;color:#DC2626;">분석 실패: ${e.message}</div>`;
         }
