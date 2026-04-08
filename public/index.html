@@ -7424,12 +7424,12 @@
 
     let seoCurrentPage = 1;
 
-    async function initSeoPage() {
+    window.initSeoPage = async function() {
         loadSeoStats();
         loadSeoProducts();
-    }
+    };
 
-    async function loadSeoStats() {
+    window.loadSeoStats = async function() {
         try {
             const stats = await api('/api/seo/stats');
 
@@ -7488,7 +7488,7 @@
         }
     }
 
-    async function loadSeoProducts(page) {
+    window.loadSeoProducts = async function(page) {
         if (page) seoCurrentPage = page;
         const search = document.getElementById('seoSearchInput').value;
         const sort = document.getElementById('seoSortSelect').value;
@@ -7562,7 +7562,7 @@
         }
     }
 
-    function renderSeoPagination(current, totalPages) {
+    window.renderSeoPagination = function(current, totalPages) {
         const container = document.getElementById('seoPagination');
         if (totalPages <= 1) { container.innerHTML = ''; return; }
 
@@ -7579,7 +7579,7 @@
         container.innerHTML = html;
     }
 
-    async function openSeoDetail(channelProductNo) {
+    window.openSeoDetail = async function(channelProductNo) {
         const overlay = document.getElementById('seoDetailOverlay');
         const content = document.getElementById('seoDetailContent');
         overlay.style.display = 'flex';
@@ -7593,7 +7593,7 @@
         }
     }
 
-    function renderSeoDetail(data) {
+    window.renderSeoDetail = function(data) {
         const gradeColor = { A: '#16A34A', B: '#2563EB', C: '#F59E0B', D: '#EA580C', F: '#DC2626' };
         const gradeBg = { A: '#F0FDF4', B: '#EFF6FF', C: '#FEF3C7', D: '#FFF7ED', F: '#FEE2E2' };
         const gc = gradeColor[data.grade] || '#666';
