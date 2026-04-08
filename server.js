@@ -3015,6 +3015,552 @@ async function initZigzagClient() {
   return new ZigzagClient(accessKey, secretKey);
 }
 
+// ========== 네이버 쇼핑 SEO 분석 ==========
+
+// SEO 상품명 분석 엔진
+function analyzeSeoTitle(name) {
+  const issues = [];
+  const suggestions = [];
+  let score = 100;
+
+  if (!name || name.trim().length === 0) {
+    return { score: 0, issues: ['상품명이 비어있습니다'], suggestions: ['상품명을 입력해주세요'], length: 0 };
+  }
+
+  const len = name.length;
+
+  // 1. 길이 체크 (50자 권장, 100자 max)
+  if (len > 100) {
+    issues.push(`상품명 ${len}자 — 최대 100자 초과`);
+    suggestions.push('100자 이내로 줄여주세요');
+    score -= 30;
+  } else if (len > 50) {
+    issues.push(`상품명 ${len}자 — 권장 50자 초과`);
+    suggestions.push('50자 이내로 줄이면 SEO 점수가 올라갑니다');
+    score -= 10;
+  } else if (len < 10) {
+    issues.push(`상품명 ${len}자 — 너무 짧음`);
+    suggestions.push('핵심 키워드를 추가하여 10자 이상으로 만들어주세요');
+    score -= 15;
+  }
+
+  // 2. 중복 키워드 검출
+  const words = name.replace(/[^\w가-힣\s]/g, '').split(/\s+/).filter(w => w.length >= 2);
+  const wordCount = {};
+  for (const w of words) {
+    const lower = w.toLowerCase();
+    wordCount[lower] = (wordCount[lower] || 0) + 1;
+  }
+  const duplicates = Object.entries(wordCount).filter(([, c]) => c >= 2).map(([w, c]) => `"${w}"(${c}회)`);
+  if (duplicates.length > 0) {
+    issues.push(`중복 키워드: ${duplicates.join(', ')}`);
+    suggestions.push('동의어/유의어는 네이버가 자동 처리하므로 중복 기재 불필요');
+    score -= duplicates.length * 8;
+  }
+
+  // 3. 특수문자 남용 (★, ●, ♥, ■, ◆ 등)
+  const specialChars = name.match(/[★☆●○■□◆◇♥♡▶►▲△▼▽※◎⊙♣♠♦◀←→↑↓«»「」〔〕【】《》]/g);
+  if (specialChars && specialChars.length > 0) {
+    issues.push(`특수문자 ${specialChars.length}개 사용: ${[...new Set(specialChars)].join('')}`);
+    suggestions.push('특수문자를 제거하세요 — 신뢰도 페널티 대상');
+    score -= specialChars.length * 5;
+  }
+
+  // 4. 과도한 괄호/기호 사용
+  const brackets = name.match(/[(){}\[\]<>]/g);
+  if (brackets && brackets.length > 4) {
+    issues.push(`괄호류 ${brackets.length}개 — 과다 사용`);
+    suggestions.push('괄호 사용을 최소화하세요 (2쌍 이내 권장)');
+    score -= 5;
+  }
+
+  // 5. 연속 공백
+  if (/\s{2,}/.test(name)) {
+    issues.push('연속 공백 포함');
+    suggestions.push('공백을 하나로 정리하세요');
+    score -= 3;
+  }
+
+  // 6. 앞뒤 공백
+  if (name !== name.trim()) {
+    issues.push('앞뒤 불필요한 공백');
+    suggestions.push('앞뒤 공백을 제거하세요');
+    score -= 3;
+  }
+
+  // 7. 브랜드 위치 분석 — 브랜드명이 상품명 맨 앞에 있는지
+  // (브랜드는 브랜드 필드에 넣는 게 유리, 상품명에선 맨 앞)
+
+  // 8. 홍보성 문구 (무료배송, 1+1, 최저가, 특가, SALE 등)
+  const promoPatterns = /무료배송|사은품|1\+1|최저가|특가|SALE|세일|할인|한정|핫딜|빅세일|타임세일|당일발송|오늘출발/gi;
+  const promoMatches = name.match(promoPatterns);
+  if (promoMatches && promoMatches.length > 0) {
+    issues.push(`홍보성 문구: ${[...new Set(promoMatches)].join(', ')}`);
+    suggestions.push('홍보성 문구는 상품명이 아닌 프로모션 설정에서 관리하세요 — 페널티 대상');
+    score -= promoMatches.length * 7;
+  }
+
+  // 9. 상품명 구조 분석 (브랜드 + 핵심키워드 + 속성)
+  const hasKorean = /[가-힣]/.test(name);
+  const hasEnglish = /[a-zA-Z]/.test(name);
+  if (!hasKorean && hasEnglish) {
+    suggestions.push('한글 키워드를 추가하면 국내 검색 노출에 유리합니다');
+    score -= 5;
+  }
+
+  return {
+    score: Math.max(0, Math.min(100, score)),
+    issues,
+    suggestions,
+    length: len,
+    wordCount: words.length,
+    duplicateKeywords: duplicates,
+  };
+}
+
+// SEO 카테고리 분석
+function analyzeSeoCategory(product) {
+  const issues = [];
+  const suggestions = [];
+  let score = 100;
+
+  const origin = product.originProduct || product;
+  const categoryId = origin.leafCategoryId;
+
+  if (!categoryId) {
+    issues.push('카테고리 미설정');
+    suggestions.push('정확한 카테고리를 설정해야 카테고리 선호도 점수를 받을 수 있습니다');
+    score -= 40;
+  }
+
+  return { score: Math.max(0, score), issues, suggestions, categoryId };
+}
+
+// SEO 속성/태그 분석
+function analyzeSeoAttributes(product) {
+  const issues = [];
+  const suggestions = [];
+  let score = 100;
+
+  const origin = product.originProduct || product;
+  const da = origin.detailAttribute || {};
+
+  // 상품 속성 (productAttributes)
+  const attrs = da.productAttributes || [];
+  if (attrs.length === 0) {
+    issues.push('상품 속성 미입력 (0개)');
+    suggestions.push('카테고리별 필수/선택 속성을 모두 입력하면 검색 필터 노출 기회가 늘어납니다');
+    score -= 30;
+  } else if (attrs.length < 3) {
+    issues.push(`상품 속성 ${attrs.length}개 — 부족`);
+    suggestions.push('가능한 모든 속성을 빠짐없이 입력하세요');
+    score -= 15;
+  }
+
+  // SEO 정보 (seoInfo — 네이버 자체 SEO 필드)
+  const seoInfo = da.seoInfo;
+  if (!seoInfo) {
+    issues.push('SEO 정보(seoInfo) 미설정');
+    suggestions.push('검색엔진 최적화 제목/설명을 별도로 설정하면 검색 노출에 유리합니다');
+    score -= 10;
+  } else {
+    if (!seoInfo.pageTitle) {
+      issues.push('SEO 페이지 타이틀 미설정');
+      score -= 5;
+    }
+    if (!seoInfo.metaDescription) {
+      issues.push('SEO 메타 설명 미설정');
+      score -= 5;
+    }
+  }
+
+  // 태그 (tags)
+  const tags = da.tag || origin.tag;
+  if (!tags || (typeof tags === 'string' && tags.trim().length === 0)) {
+    issues.push('검색 태그 미입력');
+    suggestions.push('관련 검색어를 태그로 추가하면 연관 검색 노출이 늘어납니다');
+    score -= 10;
+  }
+
+  // 네이버쇼핑 검색 정보
+  const searchInfo = da.naverShoppingSearchInfo;
+  if (!searchInfo) {
+    issues.push('네이버쇼핑 검색 정보(naverShoppingSearchInfo) 미설정');
+    score -= 10;
+  } else {
+    if (!searchInfo.manufacturerName && !searchInfo.brandName) {
+      issues.push('제조사/브랜드명 미입력');
+      suggestions.push('브랜드는 상품명보다 브랜드 필드에 등록하는 것이 검색 우선 노출에 유리합니다');
+      score -= 10;
+    }
+  }
+
+  return {
+    score: Math.max(0, score),
+    issues,
+    suggestions,
+    attributeCount: attrs.length,
+    attributes: attrs.map(a => ({ name: a.attributeName, value: a.attributeValue?.name || a.attributeValue })),
+    hasSeoInfo: !!seoInfo,
+    hasSearchInfo: !!searchInfo,
+    hasTags: !!(tags && typeof tags === 'string' && tags.trim().length > 0),
+  };
+}
+
+// SEO 이미지 분석
+function analyzeSeoImages(product) {
+  const issues = [];
+  const suggestions = [];
+  let score = 100;
+
+  const origin = product.originProduct || product;
+  const images = origin.images || {};
+
+  // 대표 이미지
+  if (!images.representativeImage || !images.representativeImage.url) {
+    issues.push('대표 이미지 없음');
+    suggestions.push('고품질 대표 이미지를 등록하세요 (1000x1000 이상 권장)');
+    score -= 40;
+  }
+
+  // 추가 이미지
+  const optionalImages = images.optionalImages || [];
+  if (optionalImages.length === 0) {
+    issues.push('추가 이미지 없음 (대표 이미지만 존재)');
+    suggestions.push('다양한 각도의 추가 이미지를 3장 이상 등록하세요');
+    score -= 20;
+  } else if (optionalImages.length < 3) {
+    issues.push(`추가 이미지 ${optionalImages.length}장 — 부족`);
+    suggestions.push('추가 이미지를 최소 3장 이상 등록하세요');
+    score -= 10;
+  }
+
+  return {
+    score: Math.max(0, score),
+    issues,
+    suggestions,
+    hasRepresentativeImage: !!(images.representativeImage && images.representativeImage.url),
+    optionalImageCount: optionalImages.length,
+    representativeImageUrl: images.representativeImage?.url || null,
+  };
+}
+
+// SEO 가격/할인 분석
+function analyzeSeoPrice(product) {
+  const issues = [];
+  const suggestions = [];
+  let score = 100;
+
+  const origin = product.originProduct || product;
+  const price = origin.salePrice || 0;
+
+  if (price <= 0) {
+    issues.push('판매가격 미설정 또는 0원');
+    score -= 30;
+  }
+
+  // 할인 설정 여부
+  const discount = origin.customerBenefit?.immediateDiscountPolicy;
+  if (!discount) {
+    suggestions.push('즉시할인을 설정하면 "할인중" 뱃지가 표시되어 클릭률이 높아집니다');
+  }
+
+  return { score: Math.max(0, score), issues, suggestions, price };
+}
+
+// SEO 상세페이지 분석
+function analyzeSeoDetailContent(product) {
+  const issues = [];
+  const suggestions = [];
+  let score = 100;
+
+  const origin = product.originProduct || product;
+  const content = origin.detailContent || '';
+
+  if (!content || content.trim().length === 0) {
+    issues.push('상세 설명 비어있음');
+    suggestions.push('상세 설명을 충실히 작성하세요 — 체류 시간과 구매 전환에 영향');
+    score -= 30;
+  } else {
+    const textLen = content.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length;
+    if (textLen < 100) {
+      issues.push(`상세 설명 텍스트 ${textLen}자 — 너무 짧음`);
+      suggestions.push('상세 설명을 더 충실히 작성하세요 (이미지만 나열하지 말고 텍스트 설명 추가)');
+      score -= 15;
+    }
+
+    // 이미지 개수
+    const imgTags = content.match(/<img[^>]*>/gi) || [];
+    if (imgTags.length === 0) {
+      issues.push('상세 설명에 이미지 없음');
+      suggestions.push('상세 이미지를 추가하세요');
+      score -= 10;
+    }
+  }
+
+  return { score: Math.max(0, score), issues, suggestions };
+}
+
+// 종합 SEO 분석
+function analyzeProductSeo(v2Product) {
+  const origin = v2Product.originProduct || v2Product;
+  const channel = v2Product.smartstoreChannelProduct || {};
+
+  const productName = channel.channelProductName || origin.name || '';
+
+  const titleAnalysis = analyzeSeoTitle(productName);
+  const categoryAnalysis = analyzeSeoCategory(v2Product);
+  const attributeAnalysis = analyzeSeoAttributes(v2Product);
+  const imageAnalysis = analyzeSeoImages(v2Product);
+  const priceAnalysis = analyzeSeoPrice(v2Product);
+  const detailAnalysis = analyzeSeoDetailContent(v2Product);
+
+  // 가중치 기반 종합 점수
+  const weights = {
+    title: 0.30,      // 상품명 — 가장 중요 (신뢰도 페널티 직결)
+    category: 0.15,    // 카테고리 적합도
+    attributes: 0.20,  // 속성/태그 완성도
+    images: 0.15,      // 이미지
+    price: 0.05,       // 가격
+    detail: 0.15,      // 상세 설명
+  };
+
+  const totalScore = Math.round(
+    titleAnalysis.score * weights.title +
+    categoryAnalysis.score * weights.category +
+    attributeAnalysis.score * weights.attributes +
+    imageAnalysis.score * weights.images +
+    priceAnalysis.score * weights.price +
+    detailAnalysis.score * weights.detail
+  );
+
+  // 전체 이슈/제안 합산
+  const allIssues = [
+    ...titleAnalysis.issues,
+    ...categoryAnalysis.issues,
+    ...attributeAnalysis.issues,
+    ...imageAnalysis.issues,
+    ...priceAnalysis.issues,
+    ...detailAnalysis.issues,
+  ];
+  const allSuggestions = [
+    ...titleAnalysis.suggestions,
+    ...categoryAnalysis.suggestions,
+    ...attributeAnalysis.suggestions,
+    ...imageAnalysis.suggestions,
+    ...priceAnalysis.suggestions,
+    ...detailAnalysis.suggestions,
+  ];
+
+  // 등급
+  let grade = 'A';
+  if (totalScore < 40) grade = 'F';
+  else if (totalScore < 55) grade = 'D';
+  else if (totalScore < 70) grade = 'C';
+  else if (totalScore < 85) grade = 'B';
+
+  return {
+    productName,
+    channelProductNo: channel.channelProductNo || '',
+    originProductNo: String(origin.originProductNo || ''),
+    totalScore,
+    grade,
+    issueCount: allIssues.length,
+    allIssues,
+    allSuggestions,
+    breakdown: {
+      title: titleAnalysis,
+      category: categoryAnalysis,
+      attributes: attributeAnalysis,
+      images: imageAnalysis,
+      price: priceAnalysis,
+      detail: detailAnalysis,
+    },
+  };
+}
+
+// GET /api/seo/quick-scan — store_a_products 기반 빠른 상품명 SEO 스캔
+app.get('/api/seo/quick-scan', async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const sort = req.query.sort || 'score_asc';  // score_asc=점수 낮은순 (문제 많은 것 먼저)
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const offset = (page - 1) * limit;
+
+    let where = '1=1';
+    const params = [];
+    if (search) {
+      where += ' AND name LIKE ?';
+      params.push(`%${search}%`);
+    }
+
+    const countRows = await query(`SELECT COUNT(*) as cnt FROM store_a_products WHERE ${where}`, params);
+    const total = countRows[0].cnt;
+
+    const rows = await query(
+      `SELECT channel_product_no, origin_product_no, name, sale_price, stock_quantity, image_url, status_type
+       FROM store_a_products WHERE ${where}
+       ORDER BY name
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    // 각 상품의 상품명 SEO 빠른 분석
+    const items = rows.map(row => {
+      const titleAnalysis = analyzeSeoTitle(row.name);
+      return {
+        channelProductNo: row.channel_product_no,
+        originProductNo: row.origin_product_no,
+        name: row.name,
+        salePrice: row.sale_price,
+        stockQuantity: row.stock_quantity,
+        imageUrl: row.image_url,
+        statusType: row.status_type,
+        titleScore: titleAnalysis.score,
+        titleLength: titleAnalysis.length,
+        titleIssues: titleAnalysis.issues,
+        titleSuggestions: titleAnalysis.suggestions,
+        duplicateKeywords: titleAnalysis.duplicateKeywords,
+      };
+    });
+
+    // 정렬
+    if (sort === 'score_asc') {
+      items.sort((a, b) => a.titleScore - b.titleScore);
+    } else if (sort === 'score_desc') {
+      items.sort((a, b) => b.titleScore - a.titleScore);
+    } else if (sort === 'length_desc') {
+      items.sort((a, b) => b.titleLength - a.titleLength);
+    }
+
+    // 통계
+    const scores = items.map(i => i.titleScore);
+    const avgScore = items.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    const issueCount = items.filter(i => i.titleIssues.length > 0).length;
+
+    res.json({
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      avgTitleScore: avgScore,
+      issueProductCount: issueCount,
+      items,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/seo/stats — SEO 전체 통계
+app.get('/api/seo/stats', async (req, res) => {
+  try {
+    const rows = await query('SELECT channel_product_no, name FROM store_a_products');
+
+    let totalProducts = rows.length;
+    let excellent = 0, good = 0, warning = 0, critical = 0;
+    let totalScore = 0;
+    let totalIssues = 0;
+    const commonIssues = {};
+
+    for (const row of rows) {
+      const analysis = analyzeSeoTitle(row.name);
+      totalScore += analysis.score;
+
+      if (analysis.score >= 85) excellent++;
+      else if (analysis.score >= 70) good++;
+      else if (analysis.score >= 55) warning++;
+      else critical++;
+
+      totalIssues += analysis.issues.length;
+      for (const issue of analysis.issues) {
+        const key = issue.replace(/\d+/g, 'N').replace(/"[^"]*"/g, '"..."');
+        commonIssues[key] = (commonIssues[key] || 0) + 1;
+      }
+    }
+
+    const topIssues = Object.entries(commonIssues)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([issue, count]) => ({ issue, count }));
+
+    res.json({
+      totalProducts,
+      avgScore: totalProducts > 0 ? Math.round(totalScore / totalProducts) : 0,
+      distribution: { excellent, good, warning, critical },
+      totalIssues,
+      topIssues,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/seo/analyze/:channelProductNo — 개별 상품 상세 SEO 분석 (v2 API 호출)
+app.get('/api/seo/analyze/:channelProductNo', async (req, res) => {
+  try {
+    await initSyncClients();
+    const cpNo = req.params.channelProductNo;
+    console.log(`[SEO] 상세 분석 요청: ${cpNo}`);
+
+    const v2Product = await scheduler.storeA.getChannelProduct(cpNo);
+    if (!v2Product) {
+      return res.status(404).json({ error: '상품을 찾을 수 없습니다' });
+    }
+
+    const analysis = analyzeProductSeo(v2Product);
+    res.json(analysis);
+  } catch (e) {
+    console.error('[SEO] 분석 오류:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/seo/bulk-analyze — 여러 상품 일괄 상세 분석
+app.post('/api/seo/bulk-analyze', async (req, res) => {
+  try {
+    await initSyncClients();
+    const { channelProductNos } = req.body;
+    if (!channelProductNos || !Array.isArray(channelProductNos) || channelProductNos.length === 0) {
+      return res.status(400).json({ error: 'channelProductNos 배열이 필요합니다' });
+    }
+
+    const maxBatch = 20;
+    const nos = channelProductNos.slice(0, maxBatch);
+    const results = [];
+
+    for (const cpNo of nos) {
+      try {
+        const v2Product = await scheduler.storeA.getChannelProduct(cpNo);
+        if (v2Product) {
+          results.push(analyzeProductSeo(v2Product));
+        }
+        await new Promise(r => setTimeout(r, 300)); // rate limit
+      } catch (e) {
+        results.push({
+          channelProductNo: cpNo,
+          error: e.message,
+          totalScore: 0,
+          grade: '?',
+        });
+      }
+    }
+
+    const avgScore = results.length > 0
+      ? Math.round(results.filter(r => !r.error).reduce((s, r) => s + r.totalScore, 0) / results.filter(r => !r.error).length)
+      : 0;
+
+    res.json({
+      analyzed: results.length,
+      total: channelProductNos.length,
+      avgScore,
+      results,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Initialize DB and start server
 (async () => {
   app.listen(PORT, () => {

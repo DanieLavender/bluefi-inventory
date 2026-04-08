@@ -1841,6 +1841,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
                     상품 관리
                 </a>
+                <a href="#seo" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                    SEO 최적화
+                </a>
 
                 <div class="nav-label" style="margin-top:16px;">시스템</div>
                 <a href="#settings" class="nav-item">
@@ -2543,6 +2547,92 @@
                 </div>
             </section>
 
+            <!-- ===== PAGE: SEO 최적화 ===== -->
+            <section class="page-section" id="page-seo" style="display:none">
+                <!-- SEO Stats Grid -->
+                <div class="stats-grid" id="seoStatsGrid">
+                    <div class="stat-card">
+                        <div class="stat-icon stat-icon-blue">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        </div>
+                        <div>
+                            <div class="stat-value" id="seoStatTotal">-</div>
+                            <div class="stat-label">분석 대상 상품</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#EFF6FF;color:var(--accent);">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        </div>
+                        <div>
+                            <div class="stat-value" id="seoStatAvg">-</div>
+                            <div class="stat-label">평균 SEO 점수</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#FEF3C7;color:#D97706;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        </div>
+                        <div>
+                            <div class="stat-value" id="seoStatIssues">-</div>
+                            <div class="stat-label">문제 상품</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#FEE2E2;color:#DC2626;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                        </div>
+                        <div>
+                            <div class="stat-value" id="seoStatCritical">-</div>
+                            <div class="stat-label">심각 (55점 미만)</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 점수 분포 바 -->
+                <div class="shell-card" style="margin-bottom:16px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                        <h3 style="font-size:15px;font-weight:600;">SEO 점수 분포</h3>
+                        <div id="seoDistLegend" style="display:flex;gap:16px;font-size:12px;color:var(--text-secondary);"></div>
+                    </div>
+                    <div id="seoDistBar" style="display:flex;height:32px;border-radius:8px;overflow:hidden;background:var(--border-light);"></div>
+                    <!-- 주요 문제 TOP 5 -->
+                    <div id="seoTopIssues" style="margin-top:16px;"></div>
+                </div>
+
+                <!-- 검색 & 필터 -->
+                <div class="shell-card" style="margin-bottom:16px;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                        <input type="text" id="seoSearchInput" placeholder="상품명 검색..." style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;" onkeydown="if(event.key==='Enter')loadSeoProducts()">
+                        <select id="seoSortSelect" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;" onchange="loadSeoProducts()">
+                            <option value="score_asc">점수 낮은순 (문제 먼저)</option>
+                            <option value="score_desc">점수 높은순</option>
+                            <option value="length_desc">상품명 긴순</option>
+                        </select>
+                        <button class="btn btn-accent btn-sm" onclick="loadSeoProducts()">검색</button>
+                        <button class="btn btn-outline btn-sm" onclick="loadSeoStats()">통계 새로고침</button>
+                    </div>
+                </div>
+
+                <!-- 상품 리스트 -->
+                <div class="shell-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                        <h3 style="font-size:15px;font-weight:600;">상품별 SEO 분석</h3>
+                        <span id="seoProductCount" style="font-size:12px;color:var(--text-secondary);"></span>
+                    </div>
+                    <div id="seoProductList" style="min-height:200px;"></div>
+                    <div id="seoPagination" style="display:flex;justify-content:center;gap:8px;margin-top:16px;"></div>
+                </div>
+
+                <!-- 상세 분석 모달 오버레이 -->
+                <div id="seoDetailOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:200;justify-content:center;align-items:flex-start;padding:40px 16px;overflow-y:auto;">
+                    <div style="background:white;border-radius:var(--radius-lg);max-width:720px;width:100%;padding:28px;position:relative;max-height:calc(100vh - 80px);overflow-y:auto;">
+                        <button onclick="document.getElementById('seoDetailOverlay').style.display='none'" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary);">&times;</button>
+                        <div id="seoDetailContent">로딩 중...</div>
+                    </div>
+                </div>
+            </section>
+
             <!-- ===== PAGE: Settings ===== -->
             <section class="page-section" id="page-settings" style="display:none">
                 <!-- 스마트스토어 연동 -->
@@ -3003,6 +3093,7 @@
         'brands': '브랜드 관리',
         'copy': '상품 복사',
         'master': '상품 관리',
+        'seo': 'SEO 최적화',
         'settings': '설정',
     };
 
@@ -3019,7 +3110,7 @@
         document.getElementById('loginPage').style.display = 'none';
 
         // Valid pages
-        const validPages = ['inventory', 'sales', 'log', 'brands', 'copy', 'master', 'settings'];
+        const validPages = ['inventory', 'sales', 'log', 'brands', 'copy', 'master', 'seo', 'settings'];
         const page = validPages.includes(hash) ? hash : 'inventory';
 
         // Show/hide pages
@@ -3068,6 +3159,9 @@
         }
         if (page === 'master') {
             initMasterPage();
+        }
+        if (page === 'seo') {
+            initSeoPage();
         }
     }
 
@@ -7324,6 +7418,305 @@
         html += '</div><div style="text-align:center;margin-top:16px;"><button class="btn btn-accent btn-sm" onclick="document.getElementById(\'copyResultOverlay\').style.display=\'none\'">확인</button></div></div>';
         overlay.innerHTML = html;
         overlay.style.display = 'flex';
+    }
+
+    // ========== SEO 최적화 페이지 ==========
+
+    let seoCurrentPage = 1;
+
+    async function initSeoPage() {
+        loadSeoStats();
+        loadSeoProducts();
+    }
+
+    async function loadSeoStats() {
+        try {
+            const stats = await api('/api/seo/stats');
+
+            document.getElementById('seoStatTotal').textContent = stats.totalProducts.toLocaleString();
+            document.getElementById('seoStatAvg').textContent = stats.avgScore + '점';
+            document.getElementById('seoStatIssues').textContent = (stats.distribution.warning + stats.distribution.critical).toLocaleString();
+            document.getElementById('seoStatCritical').textContent = stats.distribution.critical.toLocaleString();
+
+            // 분포 바
+            const dist = stats.distribution;
+            const total = stats.totalProducts || 1;
+            const distBar = document.getElementById('seoDistBar');
+            distBar.innerHTML = '';
+
+            const segments = [
+                { label: '우수(85+)', count: dist.excellent, color: '#16A34A' },
+                { label: '양호(70-84)', count: dist.good, color: '#2563EB' },
+                { label: '주의(55-69)', count: dist.warning, color: '#F59E0B' },
+                { label: '심각(0-54)', count: dist.critical, color: '#DC2626' },
+            ];
+
+            for (const seg of segments) {
+                if (seg.count <= 0) continue;
+                const pct = (seg.count / total * 100).toFixed(1);
+                const div = document.createElement('div');
+                div.style.cssText = `width:${pct}%;background:${seg.color};display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:600;min-width:30px;transition:width 0.5s;`;
+                div.textContent = seg.count;
+                div.title = `${seg.label}: ${seg.count}개 (${pct}%)`;
+                distBar.appendChild(div);
+            }
+
+            // 범례
+            const legend = document.getElementById('seoDistLegend');
+            legend.innerHTML = segments.map(s =>
+                `<span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:${s.color};display:inline-block;"></span>${s.label} ${s.count}</span>`
+            ).join('');
+
+            // TOP 이슈
+            const topDiv = document.getElementById('seoTopIssues');
+            if (stats.topIssues && stats.topIssues.length > 0) {
+                topDiv.innerHTML = `
+                    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary);">자주 발견되는 문제 TOP ${stats.topIssues.length}</div>
+                    ${stats.topIssues.map((t, i) => `
+                        <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:13px;">
+                            <span style="width:20px;height:20px;border-radius:50%;background:${i < 2 ? '#FEE2E2' : '#FEF3C7'};color:${i < 2 ? '#DC2626' : '#D97706'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</span>
+                            <span style="flex:1;">${t.issue}</span>
+                            <span style="color:var(--text-secondary);font-size:12px;flex-shrink:0;">${t.count}개 상품</span>
+                        </div>
+                    `).join('')}
+                `;
+            } else {
+                topDiv.innerHTML = '';
+            }
+        } catch (e) {
+            console.error('SEO stats error:', e);
+        }
+    }
+
+    async function loadSeoProducts(page) {
+        if (page) seoCurrentPage = page;
+        const search = document.getElementById('seoSearchInput').value;
+        const sort = document.getElementById('seoSortSelect').value;
+        const container = document.getElementById('seoProductList');
+        container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">분석 중...</div>';
+
+        try {
+            const data = await api(`/api/seo/quick-scan?search=${encodeURIComponent(search)}&sort=${sort}&page=${seoCurrentPage}&limit=30`);
+            document.getElementById('seoProductCount').textContent = `${data.total}개 상품`;
+
+            if (data.items.length === 0) {
+                container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">상품이 없습니다. 먼저 상품 인덱싱을 실행해주세요.</div>';
+                document.getElementById('seoPagination').innerHTML = '';
+                return;
+            }
+
+            let html = '<div style="display:flex;flex-direction:column;gap:8px;">';
+            for (const item of data.items) {
+                const scoreColor = item.titleScore >= 85 ? '#16A34A' : item.titleScore >= 70 ? '#2563EB' : item.titleScore >= 55 ? '#F59E0B' : '#DC2626';
+                const scoreBg = item.titleScore >= 85 ? '#F0FDF4' : item.titleScore >= 70 ? '#EFF6FF' : item.titleScore >= 55 ? '#FEF3C7' : '#FEE2E2';
+                const grade = item.titleScore >= 85 ? 'A' : item.titleScore >= 70 ? 'B' : item.titleScore >= 55 ? 'C' : item.titleScore >= 40 ? 'D' : 'F';
+
+                html += `<div style="display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border-light);border-radius:var(--radius-sm);background:white;cursor:pointer;transition:box-shadow 0.15s;" onclick="openSeoDetail('${item.channelProductNo}')" onmouseenter="this.style.boxShadow='var(--shadow-md)'" onmouseleave="this.style.boxShadow='none'">`;
+
+                // 이미지
+                if (item.imageUrl) {
+                    html += `<img src="${item.imageUrl}" style="width:48px;height:48px;border-radius:6px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">`;
+                } else {
+                    html += `<div style="width:48px;height:48px;border-radius:6px;background:var(--border-light);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px;">NO IMG</div>`;
+                }
+
+                // 상품 정보
+                html += `<div style="flex:1;min-width:0;">
+                    <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${item.name.replace(/"/g, '&quot;')}">${item.name}</div>
+                    <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">
+                        ${item.titleLength}자
+                        ${item.titleIssues.length > 0 ? ` · <span style="color:${scoreColor};">${item.titleIssues.length}개 문제</span>` : ' · <span style="color:#16A34A;">문제 없음</span>'}
+                    </div>`;
+                // 이슈 요약 (첫 2개)
+                if (item.titleIssues.length > 0) {
+                    html += `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">`;
+                    for (const issue of item.titleIssues.slice(0, 2)) {
+                        html += `<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:${scoreBg};color:${scoreColor};">${issue}</span>`;
+                    }
+                    if (item.titleIssues.length > 2) {
+                        html += `<span style="font-size:10px;padding:2px 6px;color:var(--text-secondary);">+${item.titleIssues.length - 2}</span>`;
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+
+                // 점수 뱃지
+                html += `<div style="flex-shrink:0;text-align:center;">
+                    <div style="width:44px;height:44px;border-radius:50%;background:${scoreBg};color:${scoreColor};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">${item.titleScore}</div>
+                    <div style="font-size:10px;color:${scoreColor};font-weight:600;margin-top:2px;">등급 ${grade}</div>
+                </div>`;
+
+                // 상세 분석 버튼
+                html += `<button class="btn btn-outline btn-sm" style="flex-shrink:0;font-size:11px;padding:6px 10px;" onclick="event.stopPropagation();openSeoDetail('${item.channelProductNo}')">상세 분석</button>`;
+
+                html += '</div>';
+            }
+            html += '</div>';
+            container.innerHTML = html;
+
+            // 페이지네이션
+            renderSeoPagination(data.page, data.totalPages);
+        } catch (e) {
+            container.innerHTML = `<div style="text-align:center;padding:40px;color:#DC2626;">${e.message}</div>`;
+        }
+    }
+
+    function renderSeoPagination(current, totalPages) {
+        const container = document.getElementById('seoPagination');
+        if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+        let html = '';
+        const start = Math.max(1, current - 2);
+        const end = Math.min(totalPages, current + 2);
+
+        if (current > 1) html += `<button class="btn btn-outline btn-sm" onclick="loadSeoProducts(${current - 1})">&laquo;</button>`;
+        for (let i = start; i <= end; i++) {
+            const active = i === current ? 'background:var(--accent);color:white;border-color:var(--accent);' : '';
+            html += `<button class="btn btn-outline btn-sm" style="${active}" onclick="loadSeoProducts(${i})">${i}</button>`;
+        }
+        if (current < totalPages) html += `<button class="btn btn-outline btn-sm" onclick="loadSeoProducts(${current + 1})">&raquo;</button>`;
+        container.innerHTML = html;
+    }
+
+    async function openSeoDetail(channelProductNo) {
+        const overlay = document.getElementById('seoDetailOverlay');
+        const content = document.getElementById('seoDetailContent');
+        overlay.style.display = 'flex';
+        content.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">네이버 API에서 상품 정보를 가져와 분석 중... (5~10초 소요)</div>';
+
+        try {
+            const data = await api(`/api/seo/analyze/${channelProductNo}`);
+            content.innerHTML = renderSeoDetail(data);
+        } catch (e) {
+            content.innerHTML = `<div style="text-align:center;padding:40px;color:#DC2626;">분석 실패: ${e.message}</div>`;
+        }
+    }
+
+    function renderSeoDetail(data) {
+        const gradeColor = { A: '#16A34A', B: '#2563EB', C: '#F59E0B', D: '#EA580C', F: '#DC2626' };
+        const gradeBg = { A: '#F0FDF4', B: '#EFF6FF', C: '#FEF3C7', D: '#FFF7ED', F: '#FEE2E2' };
+        const gc = gradeColor[data.grade] || '#666';
+        const gb = gradeBg[data.grade] || '#F3F4F6';
+
+        let html = '';
+
+        // 헤더: 종합 점수
+        html += `<div style="text-align:center;margin-bottom:24px;">
+            <div style="width:80px;height:80px;border-radius:50%;background:${gb};color:${gc};display:inline-flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;border:3px solid ${gc};">${data.totalScore}</div>
+            <div style="font-size:18px;font-weight:700;margin-top:8px;">등급 ${data.grade}</div>
+            <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;max-width:500px;margin-left:auto;margin-right:auto;word-break:break-all;">${data.productName}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">채널상품번호: ${data.channelProductNo}</div>
+        </div>`;
+
+        // 영역별 점수 바
+        const areas = [
+            { key: 'title', label: '상품명', icon: 'T', weight: '30%' },
+            { key: 'attributes', label: '속성/태그', icon: 'A', weight: '20%' },
+            { key: 'category', label: '카테고리', icon: 'C', weight: '15%' },
+            { key: 'images', label: '이미지', icon: 'I', weight: '15%' },
+            { key: 'detail', label: '상세설명', icon: 'D', weight: '15%' },
+            { key: 'price', label: '가격', icon: 'P', weight: '5%' },
+        ];
+
+        html += '<div style="margin-bottom:24px;">';
+        for (const area of areas) {
+            const bd = data.breakdown[area.key];
+            if (!bd) continue;
+            const sc = bd.score;
+            const barColor = sc >= 85 ? '#16A34A' : sc >= 70 ? '#2563EB' : sc >= 55 ? '#F59E0B' : '#DC2626';
+
+            html += `<div style="margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <span style="font-size:13px;font-weight:600;">${area.label} <span style="font-weight:400;color:var(--text-muted);font-size:11px;">(가중치 ${area.weight})</span></span>
+                    <span style="font-size:14px;font-weight:700;color:${barColor};">${sc}점</span>
+                </div>
+                <div style="height:8px;background:var(--border-light);border-radius:4px;overflow:hidden;">
+                    <div style="height:100%;width:${sc}%;background:${barColor};border-radius:4px;transition:width 0.5s;"></div>
+                </div>
+            </div>`;
+        }
+        html += '</div>';
+
+        // 발견된 문제
+        if (data.allIssues.length > 0) {
+            html += `<div style="margin-bottom:20px;">
+                <h4 style="font-size:14px;font-weight:700;margin-bottom:10px;color:#DC2626;display:flex;align-items:center;gap:6px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    발견된 문제 (${data.allIssues.length}개)
+                </h4>`;
+            for (const issue of data.allIssues) {
+                html += `<div style="padding:8px 12px;margin-bottom:4px;background:#FEE2E2;border-radius:6px;font-size:13px;color:#991B1B;">${issue}</div>`;
+            }
+            html += '</div>';
+        }
+
+        // 개선 제안
+        if (data.allSuggestions.length > 0) {
+            html += `<div style="margin-bottom:20px;">
+                <h4 style="font-size:14px;font-weight:700;margin-bottom:10px;color:#2563EB;display:flex;align-items:center;gap:6px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    개선 제안 (${data.allSuggestions.length}개)
+                </h4>`;
+            for (const sug of data.allSuggestions) {
+                html += `<div style="padding:8px 12px;margin-bottom:4px;background:#EFF6FF;border-radius:6px;font-size:13px;color:#1E40AF;">${sug}</div>`;
+            }
+            html += '</div>';
+        }
+
+        // 세부 정보
+        const bd = data.breakdown;
+
+        // 상품명 상세
+        if (bd.title) {
+            html += `<div style="padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);margin-bottom:12px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">상품명 분석</div>
+                <div style="font-size:12px;color:var(--text-secondary);">
+                    글자 수: <strong>${bd.title.length}자</strong> (권장 50자 이내) · 단어 수: <strong>${bd.title.wordCount}개</strong>
+                    ${bd.title.duplicateKeywords && bd.title.duplicateKeywords.length > 0 ? ' · 중복: <strong style="color:#DC2626;">' + bd.title.duplicateKeywords.join(', ') + '</strong>' : ''}
+                </div>
+            </div>`;
+        }
+
+        // 속성 상세
+        if (bd.attributes) {
+            html += `<div style="padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);margin-bottom:12px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">속성/태그 정보</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">
+                    등록된 속성: <strong>${bd.attributes.attributeCount}개</strong>
+                    · SEO 정보: ${bd.attributes.hasSeoInfo ? '<strong style="color:#16A34A;">설정됨</strong>' : '<strong style="color:#DC2626;">미설정</strong>'}
+                    · 검색 정보: ${bd.attributes.hasSearchInfo ? '<strong style="color:#16A34A;">설정됨</strong>' : '<strong style="color:#DC2626;">미설정</strong>'}
+                    · 태그: ${bd.attributes.hasTags ? '<strong style="color:#16A34A;">있음</strong>' : '<strong style="color:#DC2626;">없음</strong>'}
+                </div>`;
+            if (bd.attributes.attributes && bd.attributes.attributes.length > 0) {
+                html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+                for (const attr of bd.attributes.attributes) {
+                    html += `<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--accent-lighter);color:var(--accent);">${attr.name}: ${attr.value || '-'}</span>`;
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        // 이미지 상세
+        if (bd.images) {
+            html += `<div style="padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);margin-bottom:12px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">이미지 정보</div>
+                <div style="font-size:12px;color:var(--text-secondary);">
+                    대표 이미지: ${bd.images.hasRepresentativeImage ? '<strong style="color:#16A34A;">있음</strong>' : '<strong style="color:#DC2626;">없음</strong>'}
+                    · 추가 이미지: <strong>${bd.images.optionalImageCount}장</strong> (3장 이상 권장)
+                </div>`;
+            if (bd.images.representativeImageUrl) {
+                html += `<img src="${bd.images.representativeImageUrl}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;margin-top:8px;">`;
+            }
+            html += '</div>';
+        }
+
+        // 닫기 버튼
+        html += `<div style="text-align:center;margin-top:16px;">
+            <button class="btn btn-accent btn-sm" onclick="document.getElementById('seoDetailOverlay').style.display='none'">닫기</button>
+        </div>`;
+
+        return html;
     }
 
     async function loadCopyHistory() {
