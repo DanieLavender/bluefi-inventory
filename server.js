@@ -3231,7 +3231,7 @@ function analyzeSeoAttributes(product) {
   const origin = product.originProduct || product;
   const da = origin.detailAttribute || {};
 
-  // 상품 속성 (productAttributes)
+  // 상품 속성 (productAttributes — seq ID 배열)
   const attrs = da.productAttributes || [];
   if (attrs.length === 0) {
     issues.push('상품 속성 미입력 (0개)');
@@ -3241,43 +3241,42 @@ function analyzeSeoAttributes(product) {
     issues.push(`상품 속성 ${attrs.length}개 — 부족`);
     suggestions.push('가능한 모든 속성을 빠짐없이 입력하세요');
     score -= 15;
+  } else if (attrs.length < 5) {
+    issues.push(`상품 속성 ${attrs.length}개 — 보통`);
+    suggestions.push('속성을 5개 이상 입력하면 검색 필터 노출이 늘어납니다');
+    score -= 5;
   }
 
-  // SEO 정보 (seoInfo — 네이버 자체 SEO 필드)
+  // SEO 정보 (seoInfo.sellerTags — 판매자 태그)
   const seoInfo = da.seoInfo;
+  const sellerTags = seoInfo?.sellerTags || [];
   if (!seoInfo) {
     issues.push('SEO 정보(seoInfo) 미설정');
-    suggestions.push('검색엔진 최적화 제목/설명을 별도로 설정하면 검색 노출에 유리합니다');
-    score -= 10;
-  } else {
-    if (!seoInfo.pageTitle) {
-      issues.push('SEO 페이지 타이틀 미설정');
-      score -= 5;
-    }
-    if (!seoInfo.metaDescription) {
-      issues.push('SEO 메타 설명 미설정');
-      score -= 5;
-    }
-  }
-
-  // 태그 (tags)
-  const tags = da.tag || origin.tag;
-  if (!tags || (typeof tags === 'string' && tags.trim().length === 0)) {
-    issues.push('검색 태그 미입력');
-    suggestions.push('관련 검색어를 태그로 추가하면 연관 검색 노출이 늘어납니다');
-    score -= 10;
+    suggestions.push('판매자 태그를 등록하면 검색 연관도가 올라갑니다');
+    score -= 15;
+  } else if (sellerTags.length === 0) {
+    issues.push('판매자 태그 미입력');
+    suggestions.push('관련 검색어를 태그로 추가하세요 (최대 10개)');
+    score -= 12;
+  } else if (sellerTags.length < 5) {
+    issues.push(`판매자 태그 ${sellerTags.length}개 — 부족 (최대 10개)`);
+    suggestions.push('태그를 최대 10개까지 채우면 연관 검색 노출이 늘어납니다');
+    score -= 5;
   }
 
   // 네이버쇼핑 검색 정보
   const searchInfo = da.naverShoppingSearchInfo;
   if (!searchInfo) {
-    issues.push('네이버쇼핑 검색 정보(naverShoppingSearchInfo) 미설정');
-    score -= 10;
+    issues.push('네이버쇼핑 검색 정보 미설정');
+    score -= 15;
   } else {
     if (!searchInfo.manufacturerName && !searchInfo.brandName) {
       issues.push('제조사/브랜드명 미입력');
       suggestions.push('브랜드는 상품명보다 브랜드 필드에 등록하는 것이 검색 우선 노출에 유리합니다');
-      score -= 10;
+      score -= 12;
+    }
+    if (searchInfo.catalogMatchingYn === false) {
+      suggestions.push('카탈로그 매칭을 활성화하면 네이버쇼핑 가격비교에 노출됩니다');
     }
   }
 
@@ -3286,10 +3285,15 @@ function analyzeSeoAttributes(product) {
     issues,
     suggestions,
     attributeCount: attrs.length,
-    attributes: attrs.map(a => ({ name: a.attributeName, value: a.attributeValue?.name || a.attributeValue })),
+    attributes: attrs.map(a => ({
+      name: `속성#${a.attributeSeq || '?'}`,
+      value: a.attributeValueSeq ? `값#${a.attributeValueSeq}` : '-',
+    })),
+    sellerTags: sellerTags.map(t => t.text).filter(Boolean),
     hasSeoInfo: !!seoInfo,
     hasSearchInfo: !!searchInfo,
-    hasTags: !!(tags && typeof tags === 'string' && tags.trim().length > 0),
+    hasSellerTags: sellerTags.length > 0,
+    sellerTagCount: sellerTags.length,
   };
 }
 
@@ -3465,14 +3469,14 @@ function analyzeProductSeo(v2Product) {
   };
 }
 
-// GET /api/seo/quick-scan — store_a_products 기반 빠른 상품명 SEO 스캔
+// GET /api/seo/quick-scan — store_a_products 기반 빠른 SEO 스캔 (전체 정렬 후 페이지네이션)
 app.get('/api/seo/quick-scan', async (req, res) => {
   try {
     const search = req.query.search || '';
-    const sort = req.query.sort || 'score_asc';  // score_asc=점수 낮은순 (문제 많은 것 먼저)
+    const sort = req.query.sort || 'score_asc';
+    const filter = req.query.filter || '';  // 'issues' = 문제 상품만
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 30;
-    const offset = (page - 1) * limit;
 
     let where = '1=1';
     const params = [];
@@ -3481,19 +3485,15 @@ app.get('/api/seo/quick-scan', async (req, res) => {
       params.push(`%${search}%`);
     }
 
-    const countRows = await query(`SELECT COUNT(*) as cnt FROM store_a_products WHERE ${where}`, params);
-    const total = countRows[0].cnt;
-
+    // 전체 조회 후 JS에서 점수 계산 → 정렬 → 페이지네이션
     const rows = await query(
       `SELECT channel_product_no, origin_product_no, name, sale_price, stock_quantity, image_url, status_type
-       FROM store_a_products WHERE ${where}
-       ORDER BY name
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
+       FROM store_a_products WHERE ${where}`,
+      params
     );
 
-    // 각 상품의 SEO 종합 추정 분석 (상품명 + DB 데이터)
-    const items = rows.map(row => {
+    // 전체 상품 SEO 분석
+    let allItems = rows.map(row => {
       const analysis = quickSeoEstimate(row);
       return {
         channelProductNo: row.channel_product_no,
@@ -3513,26 +3513,32 @@ app.get('/api/seo/quick-scan', async (req, res) => {
       };
     });
 
-    // 정렬
-    if (sort === 'score_asc') {
-      items.sort((a, b) => a.estimatedScore - b.estimatedScore);
-    } else if (sort === 'score_desc') {
-      items.sort((a, b) => b.estimatedScore - a.estimatedScore);
-    } else if (sort === 'length_desc') {
-      items.sort((a, b) => b.titleLength - a.titleLength);
+    // 필터: 문제 상품만
+    if (filter === 'issues') {
+      allItems = allItems.filter(i => i.titleIssues.length > 0);
+    } else if (filter === 'warning') {
+      allItems = allItems.filter(i => i.estimatedScore < 70);
+    } else if (filter === 'critical') {
+      allItems = allItems.filter(i => i.estimatedScore < 55);
     }
 
-    // 통계
-    const scores = items.map(i => i.estimatedScore);
-    const avgScore = items.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-    const issueCount = items.filter(i => i.titleIssues.length > 0).length;
+    // 정렬 (전체 대상)
+    if (sort === 'score_asc') {
+      allItems.sort((a, b) => a.estimatedScore - b.estimatedScore);
+    } else if (sort === 'score_desc') {
+      allItems.sort((a, b) => b.estimatedScore - a.estimatedScore);
+    } else if (sort === 'length_desc') {
+      allItems.sort((a, b) => b.titleLength - a.titleLength);
+    }
+
+    const total = allItems.length;
+    const offset = (page - 1) * limit;
+    const items = allItems.slice(offset, offset + limit);
 
     res.json({
       total,
       page,
       totalPages: Math.ceil(total / limit),
-      avgScore,
-      issueProductCount: issueCount,
       items,
     });
   } catch (e) {

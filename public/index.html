@@ -2604,6 +2604,12 @@
                 <div class="shell-card" style="margin-bottom:16px;">
                     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                         <input type="text" id="seoSearchInput" placeholder="상품명 검색..." style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;" onkeydown="if(event.key==='Enter')loadSeoProducts()">
+                        <select id="seoFilterSelect" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;" onchange="loadSeoProducts()">
+                            <option value="">전체 상품</option>
+                            <option value="issues">문제 있는 상품만</option>
+                            <option value="warning">주의 (70점 미만)</option>
+                            <option value="critical">심각 (55점 미만)</option>
+                        </select>
                         <select id="seoSortSelect" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;" onchange="loadSeoProducts()">
                             <option value="score_asc">점수 낮은순 (문제 먼저)</option>
                             <option value="score_desc">점수 높은순</option>
@@ -7496,7 +7502,8 @@
         container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">분석 중...</div>';
 
         try {
-            const data = await api(`/api/seo/quick-scan?search=${encodeURIComponent(search)}&sort=${sort}&page=${seoCurrentPage}&limit=30`);
+            const filter = document.getElementById('seoFilterSelect').value;
+            const data = await api(`/api/seo/quick-scan?search=${encodeURIComponent(search)}&sort=${sort}&filter=${filter}&page=${seoCurrentPage}&limit=30`);
             document.getElementById('seoProductCount').textContent = `${data.total}개 상품 (추정 점수 · 클릭하면 정밀 분석)`;
 
             if (data.items.length === 0) {
@@ -7683,20 +7690,28 @@
 
         // 속성 상세
         if (bd.attributes) {
+            const tagLabel = bd.attributes.hasSellerTags
+                ? `<strong style="color:#16A34A;">${bd.attributes.sellerTagCount}개</strong>`
+                : '<strong style="color:#DC2626;">없음</strong>';
             html += `<div style="padding:14px;background:var(--bg-primary);border-radius:var(--radius-sm);margin-bottom:12px;">
                 <div style="font-size:13px;font-weight:600;margin-bottom:6px;">속성/태그 정보</div>
                 <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">
                     등록된 속성: <strong>${bd.attributes.attributeCount}개</strong>
                     · SEO 정보: ${bd.attributes.hasSeoInfo ? '<strong style="color:#16A34A;">설정됨</strong>' : '<strong style="color:#DC2626;">미설정</strong>'}
                     · 검색 정보: ${bd.attributes.hasSearchInfo ? '<strong style="color:#16A34A;">설정됨</strong>' : '<strong style="color:#DC2626;">미설정</strong>'}
-                    · 태그: ${bd.attributes.hasTags ? '<strong style="color:#16A34A;">있음</strong>' : '<strong style="color:#DC2626;">없음</strong>'}
+                    · 판매자 태그: ${tagLabel}
                 </div>`;
-            if (bd.attributes.attributes && bd.attributes.attributes.length > 0) {
-                html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
-                for (const attr of bd.attributes.attributes) {
-                    html += `<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--accent-lighter);color:var(--accent);">${attr.name}: ${attr.value || '-'}</span>`;
+            // 판매자 태그 표시
+            if (bd.attributes.sellerTags && bd.attributes.sellerTags.length > 0) {
+                html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">';
+                for (const tag of bd.attributes.sellerTags) {
+                    html += '<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:#F0FDF4;color:#16A34A;">#' + tag + '</span>';
                 }
                 html += '</div>';
+            }
+            // 속성 개수만 표시 (ID만 있으므로 이름 표시 불가)
+            if (bd.attributes.attributeCount > 0) {
+                html += '<div style="font-size:11px;color:var(--text-muted);">상품 속성 ' + bd.attributes.attributeCount + '개 등록됨 (카테고리별 속성ID)</div>';
             }
             html += '</div>';
         }
