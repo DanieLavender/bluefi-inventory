@@ -3631,7 +3631,7 @@ app.post('/api/seo/index-stop', async (req, res) => {
   res.json({ message: 'SEO 인덱싱을 중지합니다.' });
 });
 
-// GET /api/seo/quick-scan — 캐시 우선, 없으면 추정 점수
+// GET /api/seo/quick-scan — 전체 조회 → 캐시/추정 점수 통합 → JS 정렬 → 페이지네이션
 app.get('/api/seo/quick-scan', async (req, res) => {
   try {
     const search = req.query.search || '';
@@ -3647,78 +3647,47 @@ app.get('/api/seo/quick-scan', async (req, res) => {
       params.push(`%${search}%`);
     }
 
-    // 필터 (캐시 점수 기반)
-    if (filter === 'issues') {
-      where += ' AND (c.issue_count > 0 OR c.channel_product_no IS NULL)';
-    } else if (filter === 'warning') {
-      where += ' AND (c.total_score < 70 OR c.channel_product_no IS NULL)';
-    } else if (filter === 'critical') {
-      where += ' AND (c.total_score < 55 OR c.channel_product_no IS NULL)';
-    }
-
-    // 정렬
-    let orderBy = 'COALESCE(c.total_score, 999) ASC'; // 기본: 점수 낮은순
-    if (sort === 'score_desc') orderBy = 'COALESCE(c.total_score, -1) DESC';
-    else if (sort === 'length_desc') orderBy = 'CHAR_LENGTH(p.name) DESC';
-
-    // 전체 개수
-    const countRows = await query(
-      `SELECT COUNT(*) as cnt FROM store_a_products p
-       LEFT JOIN seo_analysis_cache c ON p.channel_product_no = c.channel_product_no
-       WHERE ${where}`, params
-    );
-    const total = countRows[0].cnt;
-    const offset = (page - 1) * limit;
-
-    // 데이터 조회 (캐시 LEFT JOIN)
+    // 전체 조회 (캐시 LEFT JOIN)
     const rows = await query(
-      `SELECT p.channel_product_no, p.origin_product_no, p.name, p.sale_price, p.stock_quantity,
+      `SELECT p.channel_product_no, p.origin_product_no, p.name, p.sale_price,
               p.image_url, p.status_type,
-              c.total_score, c.grade, c.issue_count, c.title_score,
-              c.attributes_score, c.images_score, c.detail_score,
-              c.analyzed_at, c.analysis_json
+              c.total_score AS cached_score, c.issue_count AS cached_issues,
+              c.title_score AS cached_title_score, c.analyzed_at,
+              c.analysis_json
        FROM store_a_products p
        LEFT JOIN seo_analysis_cache c ON p.channel_product_no = c.channel_product_no
-       WHERE ${where}
-       ORDER BY ${orderBy}
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
+       WHERE ${where}`,
+      params
     );
 
-    const items = rows.map(row => {
-      const hasCached = row.total_score !== null && row.analyzed_at !== null;
+    // 점수 통합: 캐시 있으면 정밀, 없으면 추정
+    let allItems = rows.map(row => {
+      const hasCached = row.cached_score !== null && row.analyzed_at !== null;
 
       if (hasCached) {
-        // 캐시된 정밀 점수 사용
         let issues = [];
         try {
           const cached = typeof row.analysis_json === 'string' ? JSON.parse(row.analysis_json) : row.analysis_json;
           issues = cached?.allIssues || [];
         } catch (e) {}
-
         return {
           channelProductNo: row.channel_product_no,
           originProductNo: row.origin_product_no,
-          name: row.name,
-          salePrice: row.sale_price,
-          imageUrl: row.image_url,
-          statusType: row.status_type,
-          estimatedScore: row.total_score,
-          titleScore: row.title_score,
+          name: row.name, salePrice: row.sale_price,
+          imageUrl: row.image_url, statusType: row.status_type,
+          estimatedScore: row.cached_score,
+          titleScore: row.cached_title_score,
           titleLength: row.name.length,
           titleIssues: issues.slice(0, 5),
           isEstimate: false,
         };
       } else {
-        // 캐시 없음 → 추정
         const analysis = quickSeoEstimate(row);
         return {
           channelProductNo: row.channel_product_no,
           originProductNo: row.origin_product_no,
-          name: row.name,
-          salePrice: row.sale_price,
-          imageUrl: row.image_url,
-          statusType: row.status_type,
+          name: row.name, salePrice: row.sale_price,
+          imageUrl: row.image_url, statusType: row.status_type,
           estimatedScore: analysis.estimatedScore,
           titleScore: analysis.score,
           titleLength: analysis.length,
@@ -3727,6 +3696,28 @@ app.get('/api/seo/quick-scan', async (req, res) => {
         };
       }
     });
+
+    // 필터
+    if (filter === 'issues') {
+      allItems = allItems.filter(i => i.titleIssues.length > 0);
+    } else if (filter === 'warning') {
+      allItems = allItems.filter(i => i.estimatedScore < 70);
+    } else if (filter === 'critical') {
+      allItems = allItems.filter(i => i.estimatedScore < 55);
+    }
+
+    // 정렬 (전체 대상, 캐시/추정 통합 점수 기준)
+    if (sort === 'score_asc') {
+      allItems.sort((a, b) => a.estimatedScore - b.estimatedScore);
+    } else if (sort === 'score_desc') {
+      allItems.sort((a, b) => b.estimatedScore - a.estimatedScore);
+    } else if (sort === 'length_desc') {
+      allItems.sort((a, b) => b.titleLength - a.titleLength);
+    }
+
+    const total = allItems.length;
+    const offset = (page - 1) * limit;
+    const items = allItems.slice(offset, offset + limit);
 
     res.json({ total, page, totalPages: Math.ceil(total / limit), items });
   } catch (e) {
