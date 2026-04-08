@@ -2589,6 +2589,23 @@
                     </div>
                 </div>
 
+                <!-- SEO 인덱싱 상태 바 -->
+                <div class="shell-card" id="seoIndexBar" style="margin-bottom:16px;display:none;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-size:13px;font-weight:600;">SEO 정밀 분석 캐시</span>
+                            <span id="seoIndexStatus" style="font-size:12px;color:var(--text-secondary);"></span>
+                        </div>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-accent btn-sm" id="seoIndexStartBtn" onclick="startSeoIndexing()" style="font-size:11px;padding:4px 10px;">전체 분석 시작</button>
+                            <button class="btn btn-outline btn-sm" id="seoIndexStopBtn" onclick="stopSeoIndexing()" style="font-size:11px;padding:4px 10px;display:none;">중지</button>
+                        </div>
+                    </div>
+                    <div style="height:8px;background:var(--border-light);border-radius:4px;overflow:hidden;">
+                        <div id="seoIndexProgress" style="height:100%;width:0%;background:var(--accent);border-radius:4px;transition:width 0.3s;"></div>
+                    </div>
+                </div>
+
                 <!-- 점수 분포 바 -->
                 <div class="shell-card" style="margin-bottom:16px;">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -7430,17 +7447,78 @@
 
     let seoCurrentPage = 1;
 
+    let seoIndexPollTimer = null;
+
     window.initSeoPage = async function() {
         loadSeoStats();
         loadSeoProducts();
+        loadSeoIndexStatus();
     };
+
+    window.startSeoIndexing = async function() {
+        try {
+            await api('/api/seo/index-start', { method: 'POST' });
+            loadSeoIndexStatus();
+        } catch (e) { console.error(e); }
+    };
+
+    window.stopSeoIndexing = async function() {
+        try {
+            await api('/api/seo/index-stop', { method: 'POST' });
+            loadSeoIndexStatus();
+        } catch (e) { console.error(e); }
+    };
+
+    async function loadSeoIndexStatus() {
+        try {
+            const data = await api('/api/seo/index-status');
+            const bar = document.getElementById('seoIndexBar');
+            bar.style.display = '';
+
+            const pct = data.coveragePercent;
+            document.getElementById('seoIndexProgress').style.width = pct + '%';
+
+            const startBtn = document.getElementById('seoIndexStartBtn');
+            const stopBtn = document.getElementById('seoIndexStopBtn');
+
+            if (data.indexing) {
+                const p = data.progress;
+                document.getElementById('seoIndexStatus').textContent =
+                    `분석 중... ${p.current}/${p.total} (${pct}% 완료, 오류 ${p.errors})`;
+                startBtn.style.display = 'none';
+                stopBtn.style.display = '';
+                document.getElementById('seoIndexProgress').style.background = '#F59E0B';
+                // 폴링
+                if (!seoIndexPollTimer) {
+                    seoIndexPollTimer = setInterval(loadSeoIndexStatus, 5000);
+                }
+            } else {
+                document.getElementById('seoIndexStatus').textContent =
+                    `${data.cached}/${data.total} 상품 캐시됨 (${pct}%)`;
+                startBtn.style.display = '';
+                startBtn.textContent = pct >= 100 ? '전체 재분석' : '분석 시작';
+                stopBtn.style.display = 'none';
+                document.getElementById('seoIndexProgress').style.background = pct >= 100 ? '#16A34A' : 'var(--accent)';
+                if (seoIndexPollTimer) {
+                    clearInterval(seoIndexPollTimer);
+                    seoIndexPollTimer = null;
+                    // 완료 후 통계/목록 새로고침
+                    loadSeoStats();
+                    loadSeoProducts();
+                }
+            }
+        } catch (e) {
+            document.getElementById('seoIndexBar').style.display = 'none';
+        }
+    }
 
     window.loadSeoStats = async function() {
         try {
             const stats = await api('/api/seo/stats');
 
             document.getElementById('seoStatTotal').textContent = stats.totalProducts.toLocaleString();
-            document.getElementById('seoStatAvg').textContent = stats.avgScore + '점';
+            const scoreLabel = stats.coveragePercent >= 50 ? stats.avgScore + '점' : stats.avgScore + '점 (추정)';
+            document.getElementById('seoStatAvg').textContent = scoreLabel;
             document.getElementById('seoStatIssues').textContent = (stats.distribution.warning + stats.distribution.critical).toLocaleString();
             document.getElementById('seoStatCritical').textContent = stats.distribution.critical.toLocaleString();
 
@@ -7551,7 +7629,7 @@
                 // 점수 뱃지
                 html += `<div style="flex-shrink:0;text-align:center;">
                     <div style="width:44px;height:44px;border-radius:50%;background:${scoreBg};color:${scoreColor};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">${sc}</div>
-                    <div style="font-size:10px;color:${scoreColor};font-weight:600;margin-top:2px;">${grade} (추정)</div>
+                    <div style="font-size:10px;color:${scoreColor};font-weight:600;margin-top:2px;">${grade} ${item.isEstimate ? '(추정)' : '(정밀)'}</div>
                 </div>`;
 
                 // 상세 분석 버튼
@@ -7613,8 +7691,9 @@
         html += `<div style="text-align:center;margin-bottom:24px;">
             <div style="width:80px;height:80px;border-radius:50%;background:${gb};color:${gc};display:inline-flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;border:3px solid ${gc};">${data.totalScore}</div>
             <div style="font-size:18px;font-weight:700;margin-top:8px;">등급 ${data.grade}</div>
-            <div style="font-size:11px;color:var(--accent);margin-top:4px;padding:3px 10px;background:var(--accent-light);border-radius:4px;display:inline-block;">네이버 API 정밀 분석 결과</div>
-            ${data._estimatedScore != null ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">리스트 추정 점수: <strong>${data._estimatedScore}점</strong> → 정밀 분석: <strong style="color:${gc};">${data.totalScore}점</strong></div>` : ''}
+            <div style="font-size:11px;color:var(--accent);margin-top:4px;padding:3px 10px;background:var(--accent-light);border-radius:4px;display:inline-block;">
+                ${data.fromCache ? '캐시된 정밀 분석 결과' : '네이버 API 실시간 정밀 분석'}
+            </div>
             <div style="font-size:13px;color:var(--text-secondary);margin-top:8px;max-width:500px;margin-left:auto;margin-right:auto;word-break:break-all;">${data.productName}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">채널상품번호: ${data.channelProductNo}</div>
         </div>`;

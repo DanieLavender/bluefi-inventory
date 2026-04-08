@@ -203,6 +203,28 @@ async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
+  // SEO 분석 캐시 테이블
+  await query(`
+    CREATE TABLE IF NOT EXISTS seo_analysis_cache (
+      channel_product_no VARCHAR(255) PRIMARY KEY,
+      origin_product_no VARCHAR(255),
+      product_name VARCHAR(500) DEFAULT '',
+      total_score INT DEFAULT 0,
+      grade CHAR(1) DEFAULT '?',
+      issue_count INT DEFAULT 0,
+      title_score INT DEFAULT 0,
+      category_score INT DEFAULT 0,
+      attributes_score INT DEFAULT 0,
+      images_score INT DEFAULT 0,
+      price_score INT DEFAULT 0,
+      detail_score INT DEFAULT 0,
+      analysis_json JSON,
+      analyzed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_total_score (total_score),
+      INDEX idx_analyzed_at (analyzed_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
   // 멀티채널 상품 복사 매핑 테이블
   await query(`
     CREATE TABLE IF NOT EXISTS channel_product_mapping (

@@ -171,6 +171,132 @@ function startAutoIndexing() {
   console.log('[Index] 자동 인덱싱 활성화 (6시간 간격)');
 }
 
+// --- SEO 정밀 분석 백그라운드 인덱싱 ---
+let seoIndexingActive = false;
+let seoIndexingProgress = { current: 0, total: 0, phase: 'idle', startedAt: null, errors: 0 };
+
+async function runSeoIndexing() {
+  if (seoIndexingActive) return;
+  seoIndexingActive = true;
+  seoIndexingProgress = { current: 0, total: 0, phase: 'collecting', startedAt: new Date().toISOString(), errors: 0 };
+
+  try {
+    await initSyncClients();
+
+    // 삭제된 상품 캐시 정리
+    await query(`DELETE FROM seo_analysis_cache WHERE channel_product_no NOT IN (SELECT channel_product_no FROM store_a_products)`);
+
+    // 분석 대상: 캐시 없거나 24시간 지난 상품
+    const targets = await query(`
+      SELECT p.channel_product_no, p.origin_product_no
+      FROM store_a_products p
+      LEFT JOIN seo_analysis_cache c ON p.channel_product_no = c.channel_product_no
+      WHERE c.channel_product_no IS NULL
+         OR c.analyzed_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+    `);
+
+    seoIndexingProgress.total = targets.length;
+    seoIndexingProgress.phase = 'analyzing';
+    console.log(`[SEO Index] 분석 대상 ${targets.length}개`);
+
+    if (targets.length === 0) {
+      seoIndexingProgress.phase = 'done';
+      seoIndexingActive = false;
+      return;
+    }
+
+    for (const target of targets) {
+      if (!seoIndexingActive) {
+        console.log('[SEO Index] 사용자에 의해 중단됨');
+        seoIndexingProgress.phase = 'stopped';
+        break;
+      }
+
+      const cpNo = target.channel_product_no;
+      const originNo = target.origin_product_no;
+
+      try {
+        let v2Product = null;
+        try {
+          v2Product = await scheduler.storeA.getChannelProduct(cpNo);
+        } catch (e) {
+          if (originNo && originNo !== cpNo) {
+            try { v2Product = await scheduler.storeA.getOriginProduct(originNo); } catch (e2) {}
+          }
+          if (!v2Product) {
+            try { v2Product = await scheduler.storeA.getOriginProduct(cpNo); } catch (e3) {}
+          }
+        }
+
+        if (v2Product) {
+          const analysis = analyzeProductSeo(v2Product);
+          await query(`
+            INSERT INTO seo_analysis_cache
+              (channel_product_no, origin_product_no, product_name, total_score, grade, issue_count,
+               title_score, category_score, attributes_score, images_score, price_score, detail_score,
+               analysis_json, analyzed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+              origin_product_no=VALUES(origin_product_no), product_name=VALUES(product_name),
+              total_score=VALUES(total_score), grade=VALUES(grade), issue_count=VALUES(issue_count),
+              title_score=VALUES(title_score), category_score=VALUES(category_score),
+              attributes_score=VALUES(attributes_score), images_score=VALUES(images_score),
+              price_score=VALUES(price_score), detail_score=VALUES(detail_score),
+              analysis_json=VALUES(analysis_json), analyzed_at=NOW()
+          `, [
+            cpNo, analysis.originProductNo, analysis.productName,
+            analysis.totalScore, analysis.grade, analysis.issueCount,
+            analysis.breakdown.title.score, analysis.breakdown.category.score,
+            analysis.breakdown.attributes.score, analysis.breakdown.images.score,
+            analysis.breakdown.price.score, analysis.breakdown.detail.score,
+            JSON.stringify(analysis),
+          ]);
+        } else {
+          seoIndexingProgress.errors++;
+        }
+      } catch (e) {
+        seoIndexingProgress.errors++;
+        if (seoIndexingProgress.errors <= 5) {
+          console.log(`[SEO Index] ${cpNo} 오류: ${e.message}`);
+        }
+      }
+
+      seoIndexingProgress.current++;
+      await new Promise(r => setTimeout(r, 300));
+
+      if (seoIndexingProgress.current % 100 === 0) {
+        console.log(`[SEO Index] ${seoIndexingProgress.current}/${seoIndexingProgress.total} 완료 (오류 ${seoIndexingProgress.errors})`);
+      }
+    }
+
+    seoIndexingProgress.phase = seoIndexingActive ? 'done' : 'stopped';
+    console.log(`[SEO Index] 완료: ${seoIndexingProgress.current}개 처리, ${seoIndexingProgress.errors}개 오류`);
+  } catch (e) {
+    console.error('[SEO Index] 치명적 오류:', e.message);
+    seoIndexingProgress.phase = 'error';
+  } finally {
+    seoIndexingActive = false;
+  }
+}
+
+let autoSeoInterval = null;
+function startAutoSeoIndexing() {
+  if (autoSeoInterval) return;
+  // 서버 시작 5분 후 첫 실행
+  setTimeout(() => {
+    if (!seoIndexingActive) {
+      runSeoIndexing().catch(e => console.log('[SEO Index] 자동 실행 오류:', e.message));
+    }
+  }, 5 * 60 * 1000);
+  // 이후 12시간마다
+  autoSeoInterval = setInterval(() => {
+    if (!seoIndexingActive) {
+      runSeoIndexing().catch(e => console.log('[SEO Index] 자동 실행 오류:', e.message));
+    }
+  }, 12 * 60 * 60 * 1000);
+  console.log('[SEO Index] 자동 인덱싱 활성화 (5분 후 첫 실행, 12시간 간격)');
+}
+
 // --- 상품 API (products 통합 테이블) ---
 
 const channelCols = { naver_a: 'naver_a_no', naver_b: 'naver_b_no', coupang: 'coupang_no', zigzag: 'zigzag_no' };
@@ -3469,115 +3595,207 @@ function analyzeProductSeo(v2Product) {
   };
 }
 
-// GET /api/seo/quick-scan — store_a_products 기반 빠른 SEO 스캔 (전체 정렬 후 페이지네이션)
-app.get('/api/seo/quick-scan', async (req, res) => {
+// --- SEO 인덱싱 API ---
+
+// GET /api/seo/index-status — SEO 인덱싱 진행률
+app.get('/api/seo/index-status', async (req, res) => {
   try {
-    const search = req.query.search || '';
-    const sort = req.query.sort || 'score_asc';
-    const filter = req.query.filter || '';  // 'issues' = 문제 상품만
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 30;
-
-    let where = '1=1';
-    const params = [];
-    if (search) {
-      where += ' AND name LIKE ?';
-      params.push(`%${search}%`);
-    }
-
-    // 전체 조회 후 JS에서 점수 계산 → 정렬 → 페이지네이션
-    const rows = await query(
-      `SELECT channel_product_no, origin_product_no, name, sale_price, stock_quantity, image_url, status_type
-       FROM store_a_products WHERE ${where}`,
-      params
-    );
-
-    // 전체 상품 SEO 분석
-    let allItems = rows.map(row => {
-      const analysis = quickSeoEstimate(row);
-      return {
-        channelProductNo: row.channel_product_no,
-        originProductNo: row.origin_product_no,
-        name: row.name,
-        salePrice: row.sale_price,
-        stockQuantity: row.stock_quantity,
-        imageUrl: row.image_url,
-        statusType: row.status_type,
-        estimatedScore: analysis.estimatedScore,
-        titleScore: analysis.score,
-        titleLength: analysis.length,
-        titleIssues: [...analysis.issues, ...analysis.extraIssues],
-        titleSuggestions: analysis.suggestions,
-        duplicateKeywords: analysis.duplicateKeywords,
-        isEstimate: true,
-      };
-    });
-
-    // 필터: 문제 상품만
-    if (filter === 'issues') {
-      allItems = allItems.filter(i => i.titleIssues.length > 0);
-    } else if (filter === 'warning') {
-      allItems = allItems.filter(i => i.estimatedScore < 70);
-    } else if (filter === 'critical') {
-      allItems = allItems.filter(i => i.estimatedScore < 55);
-    }
-
-    // 정렬 (전체 대상)
-    if (sort === 'score_asc') {
-      allItems.sort((a, b) => a.estimatedScore - b.estimatedScore);
-    } else if (sort === 'score_desc') {
-      allItems.sort((a, b) => b.estimatedScore - a.estimatedScore);
-    } else if (sort === 'length_desc') {
-      allItems.sort((a, b) => b.titleLength - a.titleLength);
-    }
-
-    const total = allItems.length;
-    const offset = (page - 1) * limit;
-    const items = allItems.slice(offset, offset + limit);
-
+    const cachedRows = await query('SELECT COUNT(*) as cnt FROM seo_analysis_cache');
+    const totalRows = await query('SELECT COUNT(*) as cnt FROM store_a_products');
+    const cached = cachedRows[0].cnt;
+    const total = totalRows[0].cnt;
     res.json({
+      indexing: seoIndexingActive,
+      progress: seoIndexingProgress,
+      cached,
       total,
-      page,
-      totalPages: Math.ceil(total / limit),
-      items,
+      coveragePercent: total > 0 ? Math.round(cached / total * 100) : 0,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /api/seo/stats — SEO 전체 통계 (추정 종합 점수 기반)
+// POST /api/seo/index-start — SEO 인덱싱 수동 시작
+app.post('/api/seo/index-start', async (req, res) => {
+  if (seoIndexingActive) {
+    return res.json({ message: '이미 진행 중', progress: seoIndexingProgress });
+  }
+  runSeoIndexing().catch(e => console.error('[SEO Index] 오류:', e.message));
+  res.json({ message: 'SEO 정밀 분석 인덱싱을 시작했습니다.' });
+});
+
+// POST /api/seo/index-stop — SEO 인덱싱 중단
+app.post('/api/seo/index-stop', async (req, res) => {
+  seoIndexingActive = false;
+  res.json({ message: 'SEO 인덱싱을 중지합니다.' });
+});
+
+// GET /api/seo/quick-scan — 캐시 우선, 없으면 추정 점수
+app.get('/api/seo/quick-scan', async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const sort = req.query.sort || 'score_asc';
+    const filter = req.query.filter || '';
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+
+    let where = '1=1';
+    const params = [];
+    if (search) {
+      where += ' AND p.name LIKE ?';
+      params.push(`%${search}%`);
+    }
+
+    // 필터 (캐시 점수 기반)
+    if (filter === 'issues') {
+      where += ' AND (c.issue_count > 0 OR c.channel_product_no IS NULL)';
+    } else if (filter === 'warning') {
+      where += ' AND (c.total_score < 70 OR c.channel_product_no IS NULL)';
+    } else if (filter === 'critical') {
+      where += ' AND (c.total_score < 55 OR c.channel_product_no IS NULL)';
+    }
+
+    // 정렬
+    let orderBy = 'COALESCE(c.total_score, 999) ASC'; // 기본: 점수 낮은순
+    if (sort === 'score_desc') orderBy = 'COALESCE(c.total_score, -1) DESC';
+    else if (sort === 'length_desc') orderBy = 'CHAR_LENGTH(p.name) DESC';
+
+    // 전체 개수
+    const countRows = await query(
+      `SELECT COUNT(*) as cnt FROM store_a_products p
+       LEFT JOIN seo_analysis_cache c ON p.channel_product_no = c.channel_product_no
+       WHERE ${where}`, params
+    );
+    const total = countRows[0].cnt;
+    const offset = (page - 1) * limit;
+
+    // 데이터 조회 (캐시 LEFT JOIN)
+    const rows = await query(
+      `SELECT p.channel_product_no, p.origin_product_no, p.name, p.sale_price, p.stock_quantity,
+              p.image_url, p.status_type,
+              c.total_score, c.grade, c.issue_count, c.title_score,
+              c.attributes_score, c.images_score, c.detail_score,
+              c.analyzed_at, c.analysis_json
+       FROM store_a_products p
+       LEFT JOIN seo_analysis_cache c ON p.channel_product_no = c.channel_product_no
+       WHERE ${where}
+       ORDER BY ${orderBy}
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    const items = rows.map(row => {
+      const hasCached = row.total_score !== null && row.analyzed_at !== null;
+
+      if (hasCached) {
+        // 캐시된 정밀 점수 사용
+        let issues = [];
+        try {
+          const cached = typeof row.analysis_json === 'string' ? JSON.parse(row.analysis_json) : row.analysis_json;
+          issues = cached?.allIssues || [];
+        } catch (e) {}
+
+        return {
+          channelProductNo: row.channel_product_no,
+          originProductNo: row.origin_product_no,
+          name: row.name,
+          salePrice: row.sale_price,
+          imageUrl: row.image_url,
+          statusType: row.status_type,
+          estimatedScore: row.total_score,
+          titleScore: row.title_score,
+          titleLength: row.name.length,
+          titleIssues: issues.slice(0, 5),
+          isEstimate: false,
+        };
+      } else {
+        // 캐시 없음 → 추정
+        const analysis = quickSeoEstimate(row);
+        return {
+          channelProductNo: row.channel_product_no,
+          originProductNo: row.origin_product_no,
+          name: row.name,
+          salePrice: row.sale_price,
+          imageUrl: row.image_url,
+          statusType: row.status_type,
+          estimatedScore: analysis.estimatedScore,
+          titleScore: analysis.score,
+          titleLength: analysis.length,
+          titleIssues: [...analysis.issues, ...analysis.extraIssues],
+          isEstimate: true,
+        };
+      }
+    });
+
+    res.json({ total, page, totalPages: Math.ceil(total / limit), items });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/seo/stats — 캐시 기반 통계 (캐시 없으면 추정)
 app.get('/api/seo/stats', async (req, res) => {
   try {
-    const rows = await query('SELECT channel_product_no, name, image_url, sale_price FROM store_a_products');
+    const totalRows = await query('SELECT COUNT(*) as cnt FROM store_a_products');
+    const totalProducts = totalRows[0].cnt;
+    const cachedRows = await query('SELECT COUNT(*) as cnt FROM seo_analysis_cache');
+    const cachedCount = cachedRows[0].cnt;
+    const coveragePercent = totalProducts > 0 ? Math.round(cachedCount / totalProducts * 100) : 0;
 
-    let totalProducts = rows.length;
     let excellent = 0, good = 0, warning = 0, critical = 0;
-    let totalScore = 0;
-    let totalIssues = 0;
+    let totalScore = 0, totalIssues = 0;
     const commonIssues = {};
 
-    for (const row of rows) {
-      const analysis = quickSeoEstimate(row);
-      const sc = analysis.estimatedScore;
-      totalScore += sc;
+    if (coveragePercent >= 50) {
+      // 캐시 기반 통계
+      const distRows = await query(`
+        SELECT
+          SUM(total_score >= 85) as excellent,
+          SUM(total_score >= 70 AND total_score < 85) as good,
+          SUM(total_score >= 55 AND total_score < 70) as warning,
+          SUM(total_score < 55) as critical,
+          AVG(total_score) as avg_score,
+          SUM(issue_count) as total_issues
+        FROM seo_analysis_cache
+      `);
+      const d = distRows[0];
+      excellent = Number(d.excellent) || 0;
+      good = Number(d.good) || 0;
+      warning = Number(d.warning) || 0;
+      critical = Number(d.critical) || 0;
+      totalScore = Math.round(Number(d.avg_score) || 0) * cachedCount;
+      totalIssues = Number(d.total_issues) || 0;
 
-      if (sc >= 85) excellent++;
-      else if (sc >= 70) good++;
-      else if (sc >= 55) warning++;
-      else critical++;
-
-      const allIssues = [...analysis.issues, ...analysis.extraIssues];
-      totalIssues += allIssues.length;
-      for (const issue of allIssues) {
-        const key = issue.replace(/\d+/g, 'N').replace(/"[^"]*"/g, '"..."');
-        commonIssues[key] = (commonIssues[key] || 0) + 1;
+      // TOP 이슈 (캐시에서 analysis_json 파싱)
+      const issueRows = await query('SELECT analysis_json FROM seo_analysis_cache WHERE issue_count > 0 LIMIT 500');
+      for (const r of issueRows) {
+        try {
+          const data = typeof r.analysis_json === 'string' ? JSON.parse(r.analysis_json) : r.analysis_json;
+          for (const issue of (data?.allIssues || [])) {
+            const key = issue.replace(/\d+/g, 'N').replace(/"[^"]*"/g, '"..."');
+            commonIssues[key] = (commonIssues[key] || 0) + 1;
+          }
+        } catch (e) {}
+      }
+    } else {
+      // 추정 기반
+      const rows = await query('SELECT name, image_url, sale_price FROM store_a_products');
+      for (const row of rows) {
+        const analysis = quickSeoEstimate(row);
+        const sc = analysis.estimatedScore;
+        totalScore += sc;
+        if (sc >= 85) excellent++; else if (sc >= 70) good++; else if (sc >= 55) warning++; else critical++;
+        const allIssues = [...analysis.issues, ...analysis.extraIssues];
+        totalIssues += allIssues.length;
+        for (const issue of allIssues) {
+          const key = issue.replace(/\d+/g, 'N').replace(/"[^"]*"/g, '"..."');
+          commonIssues[key] = (commonIssues[key] || 0) + 1;
+        }
       }
     }
 
-    const topIssues = Object.entries(commonIssues)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
+    const topIssues = Object.entries(commonIssues).sort((a, b) => b[1] - a[1]).slice(0, 8)
       .map(([issue, count]) => ({ issue, count }));
 
     res.json({
@@ -3586,57 +3804,76 @@ app.get('/api/seo/stats', async (req, res) => {
       distribution: { excellent, good, warning, critical },
       totalIssues,
       topIssues,
+      cachedCount,
+      coveragePercent,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /api/seo/analyze/:channelProductNo — 개별 상품 상세 SEO 분석 (v2 API 호출)
+// GET /api/seo/analyze/:channelProductNo — 캐시 우선, 없으면 v2 API 호출
 app.get('/api/seo/analyze/:channelProductNo', async (req, res) => {
   try {
-    await initSyncClients();
     const cpNo = req.params.channelProductNo;
-    console.log(`[SEO] 상세 분석 요청: ${cpNo}`);
 
+    // 1차: 캐시 확인
+    const cacheRows = await query(
+      'SELECT analysis_json, analyzed_at FROM seo_analysis_cache WHERE channel_product_no = ?', [cpNo]
+    );
+    if (cacheRows.length > 0 && cacheRows[0].analysis_json) {
+      const cached = typeof cacheRows[0].analysis_json === 'string'
+        ? JSON.parse(cacheRows[0].analysis_json) : cacheRows[0].analysis_json;
+      cached.fromCache = true;
+      cached.cachedAt = cacheRows[0].analyzed_at;
+      return res.json(cached);
+    }
+
+    // 2차: v2 API 호출
+    await initSyncClients();
     let v2Product = null;
-
-    // 1차: channelProductNo로 조회
     try {
       v2Product = await scheduler.storeA.getChannelProduct(cpNo);
-    } catch (e) {
-      console.log(`[SEO] channelProductNo ${cpNo} 조회 실패, originProductNo로 재시도: ${e.message}`);
-    }
-
-    // 2차: originProductNo로 조회 (DB에서 origin_product_no 확인)
+    } catch (e) {}
     if (!v2Product) {
-      const rows = await query(
-        'SELECT origin_product_no FROM store_a_products WHERE channel_product_no = ?', [cpNo]
-      );
+      const rows = await query('SELECT origin_product_no FROM store_a_products WHERE channel_product_no = ?', [cpNo]);
       const originNo = rows[0]?.origin_product_no;
       if (originNo && originNo !== cpNo) {
-        try {
-          v2Product = await scheduler.storeA.getOriginProduct(originNo);
-        } catch (e2) {
-          console.log(`[SEO] originProductNo ${originNo}도 조회 실패: ${e2.message}`);
-        }
+        try { v2Product = await scheduler.storeA.getOriginProduct(originNo); } catch (e2) {}
       }
     }
-
-    // 3차: cpNo 자체를 originProductNo로 시도
     if (!v2Product) {
-      try {
-        v2Product = await scheduler.storeA.getOriginProduct(cpNo);
-      } catch (e3) {
-        // 최종 실패
-      }
+      try { v2Product = await scheduler.storeA.getOriginProduct(cpNo); } catch (e3) {}
     }
-
     if (!v2Product) {
-      return res.status(404).json({ error: '상품을 찾을 수 없습니다 (channel/origin 모두 조회 실패)' });
+      return res.status(404).json({ error: '상품을 찾을 수 없습니다' });
     }
 
     const analysis = analyzeProductSeo(v2Product);
+
+    // 캐시 저장
+    await query(`
+      INSERT INTO seo_analysis_cache
+        (channel_product_no, origin_product_no, product_name, total_score, grade, issue_count,
+         title_score, category_score, attributes_score, images_score, price_score, detail_score,
+         analysis_json, analyzed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE
+        total_score=VALUES(total_score), grade=VALUES(grade), issue_count=VALUES(issue_count),
+        title_score=VALUES(title_score), category_score=VALUES(category_score),
+        attributes_score=VALUES(attributes_score), images_score=VALUES(images_score),
+        price_score=VALUES(price_score), detail_score=VALUES(detail_score),
+        analysis_json=VALUES(analysis_json), analyzed_at=NOW()
+    `, [
+      cpNo, analysis.originProductNo, analysis.productName,
+      analysis.totalScore, analysis.grade, analysis.issueCount,
+      analysis.breakdown.title.score, analysis.breakdown.category.score,
+      analysis.breakdown.attributes.score, analysis.breakdown.images.score,
+      analysis.breakdown.price.score, analysis.breakdown.detail.score,
+      JSON.stringify(analysis),
+    ]);
+
+    analysis.fromCache = false;
     res.json(analysis);
   } catch (e) {
     console.error('[SEO] 분석 오류:', e.message);
@@ -3696,6 +3933,8 @@ app.post('/api/seo/bulk-analyze', async (req, res) => {
 
     // 자동 인덱싱 시작 (6시간마다 새 상품 체크)
     startAutoIndexing();
+    // SEO 정밀 분석 자동 인덱싱 (5분 후 첫 실행, 12시간 간격)
+    startAutoSeoIndexing();
   });
 
   // DB 초기화 (포트 열린 후 백그라운드)
