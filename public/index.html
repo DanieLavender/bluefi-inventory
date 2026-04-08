@@ -7457,21 +7457,23 @@
 
     window.startSeoIndexing = async function() {
         try {
-            await api('/api/seo/index-start', { method: 'POST' });
+            await fetch('/api/seo/index-start', { method: 'POST' });
             loadSeoIndexStatus();
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error('[SEO] start error:', e); }
     };
 
     window.stopSeoIndexing = async function() {
         try {
-            await api('/api/seo/index-stop', { method: 'POST' });
+            await fetch('/api/seo/index-stop', { method: 'POST' });
             loadSeoIndexStatus();
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error('[SEO] stop error:', e); }
     };
 
     async function loadSeoIndexStatus() {
         try {
-            const data = await api('/api/seo/index-status');
+            const res = await fetch('/api/seo/index-status');
+            if (!res.ok) throw new Error('status ' + res.status);
+            const data = await res.json();
             const bar = document.getElementById('seoIndexBar');
             bar.style.display = '';
 
@@ -7484,30 +7486,29 @@
             if (data.indexing) {
                 const p = data.progress;
                 document.getElementById('seoIndexStatus').textContent =
-                    `분석 중... ${p.current}/${p.total} (${pct}% 완료, 오류 ${p.errors})`;
+                    '\uBD84\uC11D \uC911... ' + p.current + '/' + p.total + ' (' + pct + '% \uC644\uB8CC, \uC624\uB958 ' + p.errors + ')';
                 startBtn.style.display = 'none';
                 stopBtn.style.display = '';
                 document.getElementById('seoIndexProgress').style.background = '#F59E0B';
-                // 폴링
                 if (!seoIndexPollTimer) {
                     seoIndexPollTimer = setInterval(loadSeoIndexStatus, 5000);
                 }
             } else {
                 document.getElementById('seoIndexStatus').textContent =
-                    `${data.cached}/${data.total} 상품 캐시됨 (${pct}%)`;
+                    data.cached + '/' + data.total + ' \uC0C1\uD488 \uCE90\uC2DC\uB428 (' + pct + '%)';
                 startBtn.style.display = '';
-                startBtn.textContent = pct >= 100 ? '전체 재분석' : '분석 시작';
+                startBtn.textContent = pct >= 100 ? '\uC804\uCCB4 \uC7AC\uBD84\uC11D' : '\uBD84\uC11D \uC2DC\uC791';
                 stopBtn.style.display = 'none';
                 document.getElementById('seoIndexProgress').style.background = pct >= 100 ? '#16A34A' : 'var(--accent)';
                 if (seoIndexPollTimer) {
                     clearInterval(seoIndexPollTimer);
                     seoIndexPollTimer = null;
-                    // 완료 후 통계/목록 새로고침
                     loadSeoStats();
                     loadSeoProducts();
                 }
             }
         } catch (e) {
+            console.error('[SEO] index status error:', e);
             document.getElementById('seoIndexBar').style.display = 'none';
         }
     }
