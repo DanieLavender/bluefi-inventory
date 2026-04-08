@@ -7497,7 +7497,7 @@
 
         try {
             const data = await api(`/api/seo/quick-scan?search=${encodeURIComponent(search)}&sort=${sort}&page=${seoCurrentPage}&limit=30`);
-            document.getElementById('seoProductCount').textContent = `${data.total}개 상품`;
+            document.getElementById('seoProductCount').textContent = `${data.total}개 상품 (추정 점수 · 클릭하면 정밀 분석)`;
 
             if (data.items.length === 0) {
                 container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">상품이 없습니다. 먼저 상품 인덱싱을 실행해주세요.</div>';
@@ -7507,9 +7507,10 @@
 
             let html = '<div style="display:flex;flex-direction:column;gap:8px;">';
             for (const item of data.items) {
-                const scoreColor = item.titleScore >= 85 ? '#16A34A' : item.titleScore >= 70 ? '#2563EB' : item.titleScore >= 55 ? '#F59E0B' : '#DC2626';
-                const scoreBg = item.titleScore >= 85 ? '#F0FDF4' : item.titleScore >= 70 ? '#EFF6FF' : item.titleScore >= 55 ? '#FEF3C7' : '#FEE2E2';
-                const grade = item.titleScore >= 85 ? 'A' : item.titleScore >= 70 ? 'B' : item.titleScore >= 55 ? 'C' : item.titleScore >= 40 ? 'D' : 'F';
+                const sc = item.estimatedScore;
+                const scoreColor = sc >= 85 ? '#16A34A' : sc >= 70 ? '#2563EB' : sc >= 55 ? '#F59E0B' : '#DC2626';
+                const scoreBg = sc >= 85 ? '#F0FDF4' : sc >= 70 ? '#EFF6FF' : sc >= 55 ? '#FEF3C7' : '#FEE2E2';
+                const grade = sc >= 85 ? 'A' : sc >= 70 ? 'B' : sc >= 55 ? 'C' : sc >= 40 ? 'D' : 'F';
 
                 html += `<div style="display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border-light);border-radius:var(--radius-sm);background:white;cursor:pointer;transition:box-shadow 0.15s;" onclick="openSeoDetail('${item.channelProductNo}')" onmouseenter="this.style.boxShadow='var(--shadow-md)'" onmouseleave="this.style.boxShadow='none'">`;
 
@@ -7542,8 +7543,8 @@
 
                 // 점수 뱃지
                 html += `<div style="flex-shrink:0;text-align:center;">
-                    <div style="width:44px;height:44px;border-radius:50%;background:${scoreBg};color:${scoreColor};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">${item.titleScore}</div>
-                    <div style="font-size:10px;color:${scoreColor};font-weight:600;margin-top:2px;">등급 ${grade}</div>
+                    <div style="width:44px;height:44px;border-radius:50%;background:${scoreBg};color:${scoreColor};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">${sc}</div>
+                    <div style="font-size:10px;color:${scoreColor};font-weight:600;margin-top:2px;">${grade} (추정)</div>
                 </div>`;
 
                 // 상세 분석 버튼

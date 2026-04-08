@@ -3017,7 +3017,7 @@ async function initZigzagClient() {
 
 // ========== 네이버 쇼핑 SEO 분석 ==========
 
-// SEO 상품명 분석 엔진
+// SEO 상품명 분석 엔진 — 네이버 쇼핑 공식 가이드 + GBDT 모델 기준
 function analyzeSeoTitle(name) {
   const issues = [];
   const suggestions = [];
@@ -3029,22 +3029,26 @@ function analyzeSeoTitle(name) {
 
   const len = name.length;
 
-  // 1. 길이 체크 (50자 권장, 100자 max)
+  // === 1. 길이 체크 (네이버 권장 50자 이내, 최대 100자) ===
   if (len > 100) {
-    issues.push(`상품명 ${len}자 — 최대 100자 초과`);
-    suggestions.push('100자 이내로 줄여주세요');
-    score -= 30;
+    issues.push(`상품명 ${len}자 — 최대 100자 초과 (심각)`);
+    suggestions.push('100자 이내로 줄여주세요 — SEO 스코어 페널티 대상');
+    score -= 35;
+  } else if (len > 70) {
+    issues.push(`상품명 ${len}자 — 70자 초과 (길어서 불리)`);
+    suggestions.push('50자 이내로 줄이세요. 네이버는 50자 내외를 명확히 권장합니다');
+    score -= 18;
   } else if (len > 50) {
     issues.push(`상품명 ${len}자 — 권장 50자 초과`);
-    suggestions.push('50자 이내로 줄이면 SEO 점수가 올라갑니다');
-    score -= 10;
+    suggestions.push('50자 이내로 줄이면 SEO 점수 유리');
+    score -= 8;
   } else if (len < 10) {
-    issues.push(`상품명 ${len}자 — 너무 짧음`);
-    suggestions.push('핵심 키워드를 추가하여 10자 이상으로 만들어주세요');
+    issues.push(`상품명 ${len}자 — 너무 짧아 검색 노출 불리`);
+    suggestions.push('핵심 키워드를 추가하세요 (브랜드 + 상품유형 + 특징)');
     score -= 15;
   }
 
-  // 2. 중복 키워드 검출
+  // === 2. 중복 키워드 (네이버: 동의어/유의어 자동 처리, 중복 기재 불필요) ===
   const words = name.replace(/[^\w가-힣\s]/g, '').split(/\s+/).filter(w => w.length >= 2);
   const wordCount = {};
   for (const w of words) {
@@ -3054,58 +3058,103 @@ function analyzeSeoTitle(name) {
   const duplicates = Object.entries(wordCount).filter(([, c]) => c >= 2).map(([w, c]) => `"${w}"(${c}회)`);
   if (duplicates.length > 0) {
     issues.push(`중복 키워드: ${duplicates.join(', ')}`);
-    suggestions.push('동의어/유의어는 네이버가 자동 처리하므로 중복 기재 불필요');
-    score -= duplicates.length * 8;
+    suggestions.push('동의어/유의어는 네이버가 자동 처리 — 중복 기재 시 SEO 감점');
+    score -= Math.min(30, duplicates.length * 10);
   }
 
-  // 3. 특수문자 남용 (★, ●, ♥, ■, ◆ 등)
-  const specialChars = name.match(/[★☆●○■□◆◇♥♡▶►▲△▼▽※◎⊙♣♠♦◀←→↑↓«»「」〔〕【】《》]/g);
+  // === 3. 특수문자 (네이버 이미지 SEO와 동일 — 페널티 대상) ===
+  const specialChars = name.match(/[★☆●○■□◆◇♥♡▶►▲△▼▽※◎⊙♣♠♦◀←→↑↓«»「」〔〕【】《》~!@#$%^&=_|]/g);
   if (specialChars && specialChars.length > 0) {
-    issues.push(`특수문자 ${specialChars.length}개 사용: ${[...new Set(specialChars)].join('')}`);
-    suggestions.push('특수문자를 제거하세요 — 신뢰도 페널티 대상');
-    score -= specialChars.length * 5;
+    issues.push(`특수문자 ${specialChars.length}개: ${[...new Set(specialChars)].join('')}`);
+    suggestions.push('특수문자 제거하세요 — 신뢰도 페널티로 랭킹 하락');
+    score -= Math.min(25, specialChars.length * 6);
   }
 
-  // 4. 과도한 괄호/기호 사용
-  const brackets = name.match(/[(){}\[\]<>]/g);
-  if (brackets && brackets.length > 4) {
-    issues.push(`괄호류 ${brackets.length}개 — 과다 사용`);
-    suggestions.push('괄호 사용을 최소화하세요 (2쌍 이내 권장)');
+  // === 4. 괄호 안 텍스트 비율 — 괄호 남발은 키워드 스터핑 ===
+  const bracketContent = name.match(/[(\[{<（【「《][^)\]}>）】」》]*[)\]}>）】」》]/g) || [];
+  const bracketTextLen = bracketContent.reduce((sum, b) => sum + b.length, 0);
+  if (bracketContent.length > 3) {
+    issues.push(`괄호 ${bracketContent.length}개 — 키워드 스터핑 의심`);
+    suggestions.push('괄호를 2개 이내로 줄이세요');
+    score -= 12;
+  } else if (bracketTextLen > len * 0.4) {
+    issues.push(`괄호 안 텍스트가 상품명의 ${Math.round(bracketTextLen/len*100)}% — 과다`);
+    suggestions.push('괄호 안 내용을 줄이고 핵심 상품명을 강조하세요');
+    score -= 10;
+  }
+
+  // === 5. 홍보성/혜택 문구 (네이버 명시적 페널티 대상) ===
+  const promoPatterns = /무료배송|사은품|1\+1|2\+1|최저가|특가|SALE|세일|할인|한정|핫딜|빅세일|타임세일|당일발송|오늘출발|즉시발송|바로발송|긴급|초특가|파격|대박|인기|추천|베스트|BEST|HOT|NEW|신상|리뷰이벤트|쿠폰|적립금|마감임박|품절임박/gi;
+  const promoMatches = name.match(promoPatterns);
+  if (promoMatches) {
+    const unique = [...new Set(promoMatches.map(m => m.toLowerCase()))];
+    issues.push(`홍보성 문구 ${unique.length}개: ${unique.join(', ')}`);
+    suggestions.push('홍보성 문구는 상품명이 아닌 프로모션/혜택 설정에서 관리 — 신뢰도 페널티 대상');
+    score -= Math.min(30, unique.length * 8);
+  }
+
+  // === 6. 키워드 나열식 구조 (슬래시, 쉼표로 나열) ===
+  const slashCount = (name.match(/\//g) || []).length;
+  const commaCount = (name.match(/,/g) || []).length;
+  if (slashCount >= 3) {
+    issues.push(`슬래시(/) ${slashCount}개 — 키워드 나열식 상품명`);
+    suggestions.push('슬래시 나열 대신 핵심 키워드 1~2개만 사용하세요');
+    score -= 10;
+  }
+  if (commaCount >= 3) {
+    issues.push(`쉼표(,) ${commaCount}개 — 키워드 나열식`);
+    suggestions.push('쉼표 나열은 태그/속성에서 관리하세요');
+    score -= 8;
+  }
+
+  // === 7. 연속 공백 / 앞뒤 공백 ===
+  if (/\s{2,}/.test(name)) {
+    issues.push('연속 공백 포함');
+    score -= 5;
+  }
+  if (name !== name.trim()) {
+    issues.push('앞뒤 불필요한 공백');
+    score -= 3;
+  }
+
+  // === 8. 상품명 구조 분석 (적합도 핵심) ===
+  // 의류 카테고리: 브랜드 + 상품유형 + 소재/핏/특징
+  const clothingTypes = /니트|원피스|팬츠|바지|셔츠|블라우스|자켓|코트|가디건|스커트|치마|티셔츠|맨투맨|후드|조끼|베스트|점퍼|패딩|트렌치|슬랙스|데님|청바지|레깅스|조거|반팔|긴팔|민소매|탑|크롭|롱|숏|미디|맥시|드레스/i;
+  const hasClothingType = clothingTypes.test(name);
+  if (!hasClothingType) {
+    issues.push('상품 유형 키워드 미포함 (니트, 원피스, 팬츠 등)');
+    suggestions.push('검색자가 입력하는 핵심 상품유형 키워드를 상품명에 포함하세요 — 적합도 핵심');
+    score -= 12;
+  }
+
+  // 소재/핏/시즌 키워드 (있으면 가산은 아니고, 없으면 기회 손실)
+  const materialKeywords = /캐시미어|울|면|린넨|실크|폴리|나일론|레이온|코튼|니트|스웨이드|가죽|합피|트위드|모달|텐셀/i;
+  const fitKeywords = /오버핏|루즈핏|레귤러핏|슬림핏|와이드|A라인|H라인|박시|타이트|스트레이트|부츠컷|테이퍼드|배기/i;
+  const hasMaterial = materialKeywords.test(name);
+  const hasFit = fitKeywords.test(name);
+  if (!hasMaterial && !hasFit) {
+    suggestions.push('소재(울, 면, 린넨) 또는 핏(오버핏, 와이드) 키워드를 추가하면 필터 검색 노출 증가');
     score -= 5;
   }
 
-  // 5. 연속 공백
-  if (/\s{2,}/.test(name)) {
-    issues.push('연속 공백 포함');
-    suggestions.push('공백을 하나로 정리하세요');
-    score -= 3;
-  }
-
-  // 6. 앞뒤 공백
-  if (name !== name.trim()) {
-    issues.push('앞뒤 불필요한 공백');
-    suggestions.push('앞뒤 공백을 제거하세요');
-    score -= 3;
-  }
-
-  // 7. 브랜드 위치 분석 — 브랜드명이 상품명 맨 앞에 있는지
-  // (브랜드는 브랜드 필드에 넣는 게 유리, 상품명에선 맨 앞)
-
-  // 8. 홍보성 문구 (무료배송, 1+1, 최저가, 특가, SALE 등)
-  const promoPatterns = /무료배송|사은품|1\+1|최저가|특가|SALE|세일|할인|한정|핫딜|빅세일|타임세일|당일발송|오늘출발/gi;
-  const promoMatches = name.match(promoPatterns);
-  if (promoMatches && promoMatches.length > 0) {
-    issues.push(`홍보성 문구: ${[...new Set(promoMatches)].join(', ')}`);
-    suggestions.push('홍보성 문구는 상품명이 아닌 프로모션 설정에서 관리하세요 — 페널티 대상');
-    score -= promoMatches.length * 7;
-  }
-
-  // 9. 상품명 구조 분석 (브랜드 + 핵심키워드 + 속성)
+  // === 9. 영문만 상품명 (한글 검색 노출 불리) ===
   const hasKorean = /[가-힣]/.test(name);
   const hasEnglish = /[a-zA-Z]/.test(name);
   if (!hasKorean && hasEnglish) {
-    suggestions.push('한글 키워드를 추가하면 국내 검색 노출에 유리합니다');
-    score -= 5;
+    issues.push('영문만 사용 — 한글 검색 노출 불리');
+    suggestions.push('한글 키워드를 반드시 포함하세요');
+    score -= 10;
+  }
+
+  // === 10. 단어 수 체크 (너무 적으면 검색 매칭 기회 손실) ===
+  if (words.length <= 2) {
+    issues.push(`단어 ${words.length}개 — 검색 매칭 기회 부족`);
+    suggestions.push('브랜드 + 상품유형 + 특징 조합으로 3~6개 단어 권장');
+    score -= 8;
+  } else if (words.length > 10) {
+    issues.push(`단어 ${words.length}개 — 너무 많음 (키워드 스터핑 의심)`);
+    suggestions.push('핵심 키워드만 남기고 불필요한 단어를 제거하세요');
+    score -= 10;
   }
 
   return {
@@ -3115,6 +3164,43 @@ function analyzeSeoTitle(name) {
     length: len,
     wordCount: words.length,
     duplicateKeywords: duplicates,
+  };
+}
+
+// 빠른 스캔용 종합 추정 점수 (DB 데이터 기반, v2 API 없이)
+function quickSeoEstimate(row) {
+  const titleAnalysis = analyzeSeoTitle(row.name);
+
+  // DB에 있는 정보로 추가 감점 추정
+  let estimatedDeduction = 0;
+  const extraIssues = [];
+
+  // 이미지 없으면 감점 (이미지 영역 15% 가중치에서 큰 감점)
+  if (!row.image_url) {
+    estimatedDeduction += 12;
+    extraIssues.push('대표 이미지 없음');
+  }
+
+  // 가격 0원이면 감점
+  if (!row.sale_price || row.sale_price <= 0) {
+    estimatedDeduction += 5;
+    extraIssues.push('판매가 미설정');
+  }
+
+  // 속성/태그/seoInfo는 대부분 미설정 → 보수적으로 추정 감점
+  // v2 상세 분석 없이는 알 수 없으므로 기본 감점 적용
+  estimatedDeduction += 25; // 속성 미입력 추정(-15) + seoInfo 미설정 추정(-10)
+
+  // 상품명 점수 * 가중치(0.30) + 추정 나머지 영역
+  const titleContrib = titleAnalysis.score * 0.30;
+  const otherEstimate = Math.max(0, 100 - estimatedDeduction) * 0.70;
+  const estimatedTotal = Math.round(titleContrib + otherEstimate);
+
+  return {
+    ...titleAnalysis,
+    estimatedScore: Math.max(0, Math.min(100, estimatedTotal)),
+    extraIssues,
+    isEstimate: true, // 추정치 표시
   };
 }
 
@@ -3406,9 +3492,9 @@ app.get('/api/seo/quick-scan', async (req, res) => {
       [...params, limit, offset]
     );
 
-    // 각 상품의 상품명 SEO 빠른 분석
+    // 각 상품의 SEO 종합 추정 분석 (상품명 + DB 데이터)
     const items = rows.map(row => {
-      const titleAnalysis = analyzeSeoTitle(row.name);
+      const analysis = quickSeoEstimate(row);
       return {
         channelProductNo: row.channel_product_no,
         originProductNo: row.origin_product_no,
@@ -3417,25 +3503,27 @@ app.get('/api/seo/quick-scan', async (req, res) => {
         stockQuantity: row.stock_quantity,
         imageUrl: row.image_url,
         statusType: row.status_type,
-        titleScore: titleAnalysis.score,
-        titleLength: titleAnalysis.length,
-        titleIssues: titleAnalysis.issues,
-        titleSuggestions: titleAnalysis.suggestions,
-        duplicateKeywords: titleAnalysis.duplicateKeywords,
+        estimatedScore: analysis.estimatedScore,
+        titleScore: analysis.score,
+        titleLength: analysis.length,
+        titleIssues: [...analysis.issues, ...analysis.extraIssues],
+        titleSuggestions: analysis.suggestions,
+        duplicateKeywords: analysis.duplicateKeywords,
+        isEstimate: true,
       };
     });
 
     // 정렬
     if (sort === 'score_asc') {
-      items.sort((a, b) => a.titleScore - b.titleScore);
+      items.sort((a, b) => a.estimatedScore - b.estimatedScore);
     } else if (sort === 'score_desc') {
-      items.sort((a, b) => b.titleScore - a.titleScore);
+      items.sort((a, b) => b.estimatedScore - a.estimatedScore);
     } else if (sort === 'length_desc') {
       items.sort((a, b) => b.titleLength - a.titleLength);
     }
 
     // 통계
-    const scores = items.map(i => i.titleScore);
+    const scores = items.map(i => i.estimatedScore);
     const avgScore = items.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
     const issueCount = items.filter(i => i.titleIssues.length > 0).length;
 
@@ -3443,7 +3531,7 @@ app.get('/api/seo/quick-scan', async (req, res) => {
       total,
       page,
       totalPages: Math.ceil(total / limit),
-      avgTitleScore: avgScore,
+      avgScore,
       issueProductCount: issueCount,
       items,
     });
@@ -3452,10 +3540,10 @@ app.get('/api/seo/quick-scan', async (req, res) => {
   }
 });
 
-// GET /api/seo/stats — SEO 전체 통계
+// GET /api/seo/stats — SEO 전체 통계 (추정 종합 점수 기반)
 app.get('/api/seo/stats', async (req, res) => {
   try {
-    const rows = await query('SELECT channel_product_no, name FROM store_a_products');
+    const rows = await query('SELECT channel_product_no, name, image_url, sale_price FROM store_a_products');
 
     let totalProducts = rows.length;
     let excellent = 0, good = 0, warning = 0, critical = 0;
@@ -3464,16 +3552,18 @@ app.get('/api/seo/stats', async (req, res) => {
     const commonIssues = {};
 
     for (const row of rows) {
-      const analysis = analyzeSeoTitle(row.name);
-      totalScore += analysis.score;
+      const analysis = quickSeoEstimate(row);
+      const sc = analysis.estimatedScore;
+      totalScore += sc;
 
-      if (analysis.score >= 85) excellent++;
-      else if (analysis.score >= 70) good++;
-      else if (analysis.score >= 55) warning++;
+      if (sc >= 85) excellent++;
+      else if (sc >= 70) good++;
+      else if (sc >= 55) warning++;
       else critical++;
 
-      totalIssues += analysis.issues.length;
-      for (const issue of analysis.issues) {
+      const allIssues = [...analysis.issues, ...analysis.extraIssues];
+      totalIssues += allIssues.length;
+      for (const issue of allIssues) {
         const key = issue.replace(/\d+/g, 'N').replace(/"[^"]*"/g, '"..."');
         commonIssues[key] = (commonIssues[key] || 0) + 1;
       }
@@ -3481,7 +3571,7 @@ app.get('/api/seo/stats', async (req, res) => {
 
     const topIssues = Object.entries(commonIssues)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
+      .slice(0, 8)
       .map(([issue, count]) => ({ issue, count }));
 
     res.json({
