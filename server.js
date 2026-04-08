@@ -228,32 +228,65 @@ async function runSeoIndexing() {
           }
         }
 
+        // v2 API 조회 실패 시 DB 데이터로 추정 분석 캐시
+        let analysis;
         if (v2Product) {
-          const analysis = analyzeProductSeo(v2Product);
-          await query(`
-            INSERT INTO seo_analysis_cache
-              (channel_product_no, origin_product_no, product_name, total_score, grade, issue_count,
-               title_score, category_score, attributes_score, images_score, price_score, detail_score,
-               analysis_json, analyzed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-            ON DUPLICATE KEY UPDATE
-              origin_product_no=VALUES(origin_product_no), product_name=VALUES(product_name),
-              total_score=VALUES(total_score), grade=VALUES(grade), issue_count=VALUES(issue_count),
-              title_score=VALUES(title_score), category_score=VALUES(category_score),
-              attributes_score=VALUES(attributes_score), images_score=VALUES(images_score),
-              price_score=VALUES(price_score), detail_score=VALUES(detail_score),
-              analysis_json=VALUES(analysis_json), analyzed_at=NOW()
-          `, [
-            cpNo, analysis.originProductNo, analysis.productName,
-            analysis.totalScore, analysis.grade, analysis.issueCount,
-            analysis.breakdown.title.score, analysis.breakdown.category.score,
-            analysis.breakdown.attributes.score, analysis.breakdown.images.score,
-            analysis.breakdown.price.score, analysis.breakdown.detail.score,
-            JSON.stringify(analysis),
-          ]);
+          analysis = analyzeProductSeo(v2Product);
         } else {
-          seoIndexingProgress.errors++;
+          // DB에서 기본 정보 가져와서 추정 분석
+          const dbRows = await query(
+            'SELECT name, image_url, sale_price FROM store_a_products WHERE channel_product_no = ?', [cpNo]
+          );
+          if (dbRows.length > 0) {
+            const row = dbRows[0];
+            const est = quickSeoEstimate(row);
+            analysis = {
+              productName: row.name || '',
+              channelProductNo: cpNo,
+              originProductNo: originNo || '',
+              totalScore: est.estimatedScore,
+              grade: est.estimatedScore >= 85 ? 'A' : est.estimatedScore >= 70 ? 'B' : est.estimatedScore >= 55 ? 'C' : est.estimatedScore >= 40 ? 'D' : 'F',
+              issueCount: est.issues.length + est.extraIssues.length,
+              allIssues: [...est.issues, ...est.extraIssues],
+              allSuggestions: est.suggestions,
+              breakdown: {
+                title: { score: est.score, length: est.length, wordCount: est.wordCount, issues: est.issues, suggestions: est.suggestions, duplicateKeywords: est.duplicateKeywords },
+                category: { score: 50, issues: ['v2 API 조회 불가 — 카테고리 확인 불가'], suggestions: [] },
+                attributes: { score: 50, issues: ['v2 API 조회 불가 — 속성 확인 불가'], suggestions: [], attributeCount: 0, sellerTags: [], hasSeoInfo: false, hasSearchInfo: false, hasSellerTags: false, sellerTagCount: 0 },
+                images: { score: row.image_url ? 80 : 0, issues: row.image_url ? [] : ['대표 이미지 없음'], suggestions: [], hasRepresentativeImage: !!row.image_url, optionalImageCount: 0 },
+                price: { score: row.sale_price > 0 ? 100 : 0, issues: [], suggestions: [] },
+                detail: { score: 50, issues: ['v2 API 조회 불가 — 상세설명 확인 불가'], suggestions: [] },
+              },
+            };
+          } else {
+            seoIndexingProgress.errors++;
+            seoIndexingProgress.current++;
+            await new Promise(r => setTimeout(r, 100));
+            continue;
+          }
         }
+
+        await query(`
+          INSERT INTO seo_analysis_cache
+            (channel_product_no, origin_product_no, product_name, total_score, grade, issue_count,
+             title_score, category_score, attributes_score, images_score, price_score, detail_score,
+             analysis_json, analyzed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            origin_product_no=VALUES(origin_product_no), product_name=VALUES(product_name),
+            total_score=VALUES(total_score), grade=VALUES(grade), issue_count=VALUES(issue_count),
+            title_score=VALUES(title_score), category_score=VALUES(category_score),
+            attributes_score=VALUES(attributes_score), images_score=VALUES(images_score),
+            price_score=VALUES(price_score), detail_score=VALUES(detail_score),
+            analysis_json=VALUES(analysis_json), analyzed_at=NOW()
+        `, [
+          cpNo, analysis.originProductNo || originNo || '', analysis.productName,
+          analysis.totalScore, analysis.grade, analysis.issueCount,
+          analysis.breakdown.title.score, analysis.breakdown.category.score,
+          analysis.breakdown.attributes.score, analysis.breakdown.images.score,
+          analysis.breakdown.price.score, analysis.breakdown.detail.score,
+          JSON.stringify(analysis),
+        ]);
       } catch (e) {
         seoIndexingProgress.errors++;
         if (seoIndexingProgress.errors <= 5) {
