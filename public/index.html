@@ -2496,7 +2496,7 @@
                             <option value="zigzag">지그재그</option>
                             <option value="unlinked">미연결</option>
                         </select>
-                        <select id="masterSortFilter" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;">
+                        <select id="masterSortFilter" onchange="loadMasterProducts()" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;">
                             <option value="">기본 정렬</option>
                             <option value="sku">품번순</option>
                             <option value="name">이름순</option>

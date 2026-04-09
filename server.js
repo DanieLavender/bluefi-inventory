@@ -365,7 +365,7 @@ app.get('/api/master/products', async (req, res) => {
     const total = countRows[0].total;
 
     let orderBy = 'COALESCE(p.updated_at, p.created_at) DESC';
-    if (sort === 'updated') orderBy = 'p.updated_at DESC';
+    if (sort === 'updated') orderBy = 'COALESCE(p.updated_at, p.created_at) DESC';
     if (sort === 'name') orderBy = 'p.name ASC';
     if (sort === 'sku') orderBy = 'p.sku ASC';
     if (sort === 'newest') orderBy = 'p.created_at DESC';
