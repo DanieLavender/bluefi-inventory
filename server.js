@@ -364,7 +364,7 @@ app.get('/api/master/products', async (req, res) => {
     const countRows = await query(`SELECT COUNT(*) as total FROM products p ${where}`, params);
     const total = countRows[0].total;
 
-    let orderBy = 'p.id ASC';
+    let orderBy = 'COALESCE(p.updated_at, p.created_at) DESC';
     if (sort === 'updated') orderBy = 'p.updated_at DESC';
     if (sort === 'name') orderBy = 'p.name ASC';
     if (sort === 'sku') orderBy = 'p.sku ASC';
