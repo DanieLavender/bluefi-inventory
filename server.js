@@ -364,8 +364,8 @@ app.get('/api/master/products', async (req, res) => {
     const countRows = await query(`SELECT COUNT(*) as total FROM products p ${where}`, params);
     const total = countRows[0].total;
 
-    let orderBy = 'p.updated_at IS NULL, p.updated_at DESC, p.created_at DESC';
-    if (sort === 'updated') orderBy = 'p.updated_at IS NULL, p.updated_at DESC, p.created_at DESC';
+    let orderBy = 'COALESCE(p.updated_at, p.created_at) DESC';
+    if (sort === 'updated') orderBy = 'COALESCE(p.updated_at, p.created_at) DESC';
     if (sort === 'name') orderBy = 'p.name ASC';
     if (sort === 'sku') orderBy = 'p.sku ASC';
     if (sort === 'newest') orderBy = 'p.created_at DESC';
@@ -761,13 +761,13 @@ app.get('/api/inventory', async (req, res) => {
     const total = countRows[0].total;
 
     // Sort
-    let orderBy = 'ORDER BY updated_at IS NULL, updated_at DESC, created_at DESC';
+    let orderBy = 'ORDER BY COALESCE(updated_at, created_at) DESC';
     if (sort === 'name-asc') orderBy = 'ORDER BY name ASC';
     else if (sort === 'name-desc') orderBy = 'ORDER BY name DESC';
     else if (sort === 'qty-asc') orderBy = 'ORDER BY qty ASC';
     else if (sort === 'qty-desc') orderBy = 'ORDER BY qty DESC';
     else if (sort === 'color-asc') orderBy = 'ORDER BY color ASC';
-    else if (sort === 'updated-desc') orderBy = 'ORDER BY updated_at IS NULL, updated_at DESC, created_at DESC';
+    else if (sort === 'updated-desc') orderBy = 'ORDER BY COALESCE(updated_at, created_at) DESC';
 
     // Pagination
     const pageNum = parseInt(page) || 1;
