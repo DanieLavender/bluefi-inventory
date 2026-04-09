@@ -2597,7 +2597,8 @@
                             <span id="seoIndexStatus" style="font-size:12px;color:var(--text-secondary);"></span>
                         </div>
                         <div style="display:flex;gap:6px;">
-                            <button class="btn btn-accent btn-sm" id="seoIndexStartBtn" onclick="startSeoIndexing()" style="font-size:11px;padding:4px 10px;">전체 분석 시작</button>
+                            <button class="btn btn-accent btn-sm" id="seoIndexStartBtn" onclick="startSeoIndexing(false)" style="font-size:11px;padding:4px 10px;">분석 시작</button>
+                            <button class="btn btn-outline btn-sm" id="seoIndexResetBtn" onclick="startSeoIndexing(true)" style="font-size:11px;padding:4px 10px;color:var(--danger);border-color:var(--danger);">전체 재분석</button>
                             <button class="btn btn-outline btn-sm" id="seoIndexStopBtn" onclick="stopSeoIndexing()" style="font-size:11px;padding:4px 10px;display:none;">중지</button>
                         </div>
                     </div>
@@ -7455,9 +7456,14 @@
         loadSeoIndexStatus();
     };
 
-    window.startSeoIndexing = async function() {
+    window.startSeoIndexing = async function(force) {
+        if (force && !confirm('캐시를 초기화하고 전체 상품을 새 기준으로 재분석합니다. 약 20분 소요됩니다. 진행하시겠습니까?')) return;
         try {
-            await fetch('/api/seo/index-start', { method: 'POST' });
+            await fetch('/api/seo/index-start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: !!force }),
+            });
             loadSeoIndexStatus();
         } catch (e) { console.error('[SEO] start error:', e); }
     };
@@ -7488,6 +7494,7 @@
                 document.getElementById('seoIndexStatus').textContent =
                     '\uBD84\uC11D \uC911... ' + p.current + '/' + p.total + ' (' + pct + '% \uC644\uB8CC, \uC624\uB958 ' + p.errors + ')';
                 startBtn.style.display = 'none';
+                document.getElementById('seoIndexResetBtn').style.display = 'none';
                 stopBtn.style.display = '';
                 document.getElementById('seoIndexProgress').style.background = '#F59E0B';
                 if (!seoIndexPollTimer) {
@@ -7497,7 +7504,8 @@
                 document.getElementById('seoIndexStatus').textContent =
                     data.cached + '/' + data.total + ' \uC0C1\uD488 \uCE90\uC2DC\uB428 (' + pct + '%)';
                 startBtn.style.display = '';
-                startBtn.textContent = pct >= 100 ? '\uC804\uCCB4 \uC7AC\uBD84\uC11D' : '\uBD84\uC11D \uC2DC\uC791';
+                startBtn.textContent = pct >= 100 ? '\uC7AC\uBD84\uC11D' : '\uBD84\uC11D \uC2DC\uC791';
+                document.getElementById('seoIndexResetBtn').style.display = '';
                 stopBtn.style.display = 'none';
                 document.getElementById('seoIndexProgress').style.background = pct >= 100 ? '#16A34A' : 'var(--accent)';
                 if (seoIndexPollTimer) {

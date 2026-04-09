@@ -3699,13 +3699,18 @@ app.get('/api/seo/index-status', async (req, res) => {
   }
 });
 
-// POST /api/seo/index-start — SEO 인덱싱 수동 시작
+// POST /api/seo/index-start — SEO 인덱싱 수동 시작 (force=true면 캐시 초기화 후 전체 재분석)
 app.post('/api/seo/index-start', async (req, res) => {
   if (seoIndexingActive) {
     return res.json({ message: '이미 진행 중', progress: seoIndexingProgress });
   }
+  const force = req.body?.force === true;
+  if (force) {
+    await query('DELETE FROM seo_analysis_cache');
+    console.log('[SEO Index] 캐시 초기화 — 전체 재분석');
+  }
   runSeoIndexing().catch(e => console.error('[SEO Index] 오류:', e.message));
-  res.json({ message: 'SEO 정밀 분석 인덱싱을 시작했습니다.' });
+  res.json({ message: force ? '캐시 초기화 후 전체 재분석을 시작합니다.' : 'SEO 분석을 시작했습니다.' });
 });
 
 // POST /api/seo/index-stop — SEO 인덱싱 중단
