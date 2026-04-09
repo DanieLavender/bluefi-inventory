@@ -3316,6 +3316,27 @@ function analyzeSeoTitle(name) {
     score -= 10;
   }
 
+  // === 11. 타겟 키워드 (여성/남성/유니섹스) ===
+  const targetKeywords = /여성|남성|유니섹스|남녀공용|우먼|맨즈|위먼|레이디|걸즈|보이즈/i;
+  if (!targetKeywords.test(name)) {
+    suggestions.push('"여성" 또는 "남성" 키워드를 추가하면 타겟 검색에 유리합니다');
+    score -= 5;
+  }
+
+  // === 12. 컬러 키워드 (검색자가 "블랙 니트" 등으로 검색) ===
+  const colorKeywords = /블랙|화이트|아이보리|베이지|그레이|네이비|브라운|카키|핑크|레드|와인|버건디|블루|그린|옐로우|오렌지|민트|라벤더|보라|차콜|크림|연청|진청|중청/i;
+  if (!colorKeywords.test(name)) {
+    suggestions.push('대표 컬러 키워드를 상품명에 포함하면 "블랙 니트" 등 컬러+상품 검색에 노출됩니다');
+    score -= 3;
+  }
+
+  // === 13. 시즌 키워드 구체성 ===
+  const seasonKeywords = /봄|여름|가을|겨울|간절기|사계절|SS|FW|AW/i;
+  if (!seasonKeywords.test(name)) {
+    suggestions.push('시즌 키워드(봄/여름/가을/겨울)를 추가하면 시즌 검색 노출에 유리합니다');
+    score -= 3;
+  }
+
   return {
     score: Math.max(0, Math.min(100, score)),
     issues,
@@ -3376,6 +3397,15 @@ function analyzeSeoCategory(product) {
     issues.push('카테고리 미설정');
     suggestions.push('정확한 카테고리를 설정해야 카테고리 선호도 점수를 받을 수 있습니다');
     score -= 40;
+  }
+
+  // 카탈로그 매칭 여부
+  const da = origin.detailAttribute || {};
+  const searchInfo = da.naverShoppingSearchInfo;
+  if (searchInfo && searchInfo.catalogMatchingYn === false) {
+    issues.push('카탈로그 매칭 비활성화 — 가격비교 미노출');
+    suggestions.push('카탈로그 매칭을 활성화하면 네이버쇼핑 가격비교에 노출됩니다');
+    score -= 15;
   }
 
   return { score: Math.max(0, score), issues, suggestions, categoryId };
@@ -3511,7 +3541,16 @@ function analyzeSeoPrice(product) {
   // 할인 설정 여부
   const discount = origin.customerBenefit?.immediateDiscountPolicy;
   if (!discount) {
+    issues.push('즉시할인 미설정 — "할인중" 뱃지 미표시');
     suggestions.push('즉시할인을 설정하면 "할인중" 뱃지가 표시되어 클릭률이 높아집니다');
+    score -= 15;
+  }
+
+  // 무료배송 여부
+  const deliveryInfo = origin.deliveryInfo;
+  if (deliveryInfo && deliveryInfo.deliveryFee && deliveryInfo.deliveryFee.deliveryFeeType !== 'FREE') {
+    suggestions.push('무료배송을 설정하면 검색 필터에서 유리합니다');
+    score -= 5;
   }
 
   return { score: Math.max(0, score), issues, suggestions, price };
@@ -3529,13 +3568,20 @@ function analyzeSeoDetailContent(product) {
   if (!content || content.trim().length === 0) {
     issues.push('상세 설명 비어있음');
     suggestions.push('상세 설명을 충실히 작성하세요 — 체류 시간과 구매 전환에 영향');
-    score -= 30;
+    score -= 40;
   } else {
     const textLen = content.replace(/<[^>]*>/g, '').replace(/\s+/g, '').length;
-    if (textLen < 100) {
-      issues.push(`상세 설명 텍스트 ${textLen}자 — 너무 짧음`);
-      suggestions.push('상세 설명을 더 충실히 작성하세요 (이미지만 나열하지 말고 텍스트 설명 추가)');
-      score -= 15;
+    if (textLen < 50) {
+      issues.push(`상세 설명 텍스트 ${textLen}자 — 거의 없음 (이미지만 존재)`);
+      suggestions.push('상세 설명에 상품 특징, 소재, 사이즈 등 텍스트 설명을 추가하세요');
+      score -= 25;
+    } else if (textLen < 200) {
+      issues.push(`상세 설명 텍스트 ${textLen}자 — 짧음`);
+      suggestions.push('200자 이상의 텍스트 설명을 추가하면 검색 노출에 유리합니다');
+      score -= 12;
+    } else if (textLen < 500) {
+      suggestions.push('텍스트 설명을 500자 이상으로 보강하면 체류 시간이 늘어납니다');
+      score -= 5;
     }
 
     // 이미지 개수
@@ -3543,7 +3589,11 @@ function analyzeSeoDetailContent(product) {
     if (imgTags.length === 0) {
       issues.push('상세 설명에 이미지 없음');
       suggestions.push('상세 이미지를 추가하세요');
-      score -= 10;
+      score -= 15;
+    } else if (imgTags.length < 3) {
+      issues.push(`상세 이미지 ${imgTags.length}장 — 부족`);
+      suggestions.push('상세 이미지를 3장 이상 등록하세요');
+      score -= 5;
     }
   }
 
