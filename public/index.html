@@ -3396,7 +3396,7 @@
         if (brand) params.set('brand', brand);
 
         if (viewMode === 'grouped') {
-            params.set('sort', 'name-asc');
+            if (sort) params.set('sort', sort);
             params.set('limit', 9999);
         } else {
             if (sort) params.set('sort', sort);
@@ -3438,7 +3438,7 @@
         localStorage.setItem('viewMode', mode);
         document.getElementById('viewFlatBtn').classList.toggle('active', mode === 'flat');
         document.getElementById('viewGroupBtn').classList.toggle('active', mode === 'grouped');
-        document.getElementById('sortSelect').disabled = (mode === 'grouped');
+        document.getElementById('sortSelect').disabled = false;
         collapsedGroups.clear();
         currentPage = 1;
         loadData();
