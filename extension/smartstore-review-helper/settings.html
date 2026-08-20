@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>블루파이 리뷰 답글 도우미 — 설정</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 380px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      font-size: 13px;
+      color: #111827;
+      background: #FAFAFA;
+    }
+    h1 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    h1 .ver {
+      font-size: 11px;
+      font-weight: 500;
+      color: #9CA3AF;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .card h2 {
+      font-size: 12px;
+      font-weight: 700;
+      color: #4F46E5;
+      margin-bottom: 10px;
+    }
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #6B7280;
+      margin: 8px 0 4px;
+    }
+    input[type="text"], input[type="password"], textarea {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid #D1D5DB;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      color: #111827;
+      background: #fff;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #4F46E5;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      align-items: center;
+    }
+    button {
+      padding: 7px 12px;
+      border: 1px solid #4F46E5;
+      border-radius: 6px;
+      background: #4F46E5;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover:not(:disabled) { background: #4338CA; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    button.sub {
+      background: #ffffff;
+      color: #374151;
+      border-color: #D1D5DB;
+    }
+    button.sub:hover:not(:disabled) { border-color: #4F46E5; color: #4F46E5; background: #fff; }
+    .status {
+      margin-top: 8px;
+      padding: 7px 9px;
+      border-radius: 6px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      display: none;
+    }
+    .status.ok { display: block; background: #ECFDF5; border: 1px solid #A7F3D0; color: #047857; }
+    .status.err { display: block; background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C; }
+    .status.info { display: block; background: #F5F5FF; border: 1px solid #C7D2FE; color: #4338CA; }
+    .meta { font-size: 11px; color: #9CA3AF; margin-top: 6px; }
+    .note { font-size: 11px; color: #9CA3AF; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>블루파이 리뷰 답글 도우미 <span class="ver" id="version"></span></h1>
+
+  <div class="card">
+    <h2>서버 연결</h2>
+    <label for="serverUrl">서버 주소</label>
+    <input type="text" id="serverUrl" placeholder="http://cosguardian.lavenderfriends.co.kr:3001">
+    <label for="token">직원 토큰</label>
+    <input type="password" id="token" placeholder="발급받은 토큰을 붙여넣으세요">
+    <div class="row">
+      <button id="saveBtn">저장</button>
+      <button id="testBtn" class="sub">연결 테스트</button>
+    </div>
+    <div class="status" id="connStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>스토어 답글 규칙 (서버 저장)</h2>
+    <p class="note">규칙은 서버에 저장되어 확장 재배포 없이 수정할 수 있습니다.</p>
+    <label for="rules">답글 작성 규칙</label>
+    <textarea id="rules" placeholder="예: 답글은 존댓말로, 3문장 이내, 스토어명은 블루파이로 표기…"></textarea>
+    <div class="row">
+      <button id="loadRulesBtn" class="sub">불러오기</button>
+      <button id="saveRulesBtn">규칙 저장</button>
+    </div>
+    <div class="status" id="rulesStatus"></div>
+    <div class="meta" id="configMeta"></div>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

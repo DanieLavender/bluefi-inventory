@@ -122,6 +122,29 @@ async function initDb() {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS review_product_cache (
+      channel_product_no VARCHAR(64) PRIMARY KEY,
+      info TEXT,
+      material VARCHAR(255) DEFAULT NULL,
+      fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS review_replies (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      order_no VARCHAR(64) DEFAULT NULL,
+      product_no VARCHAR(64) DEFAULT NULL,
+      product_name VARCHAR(500) DEFAULT '',
+      rating INT DEFAULT NULL,
+      review_text TEXT,
+      candidates TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_review_replies_order (order_no)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS return_confirmations (
       id INT AUTO_INCREMENT PRIMARY KEY,
       product_order_id VARCHAR(255) UNIQUE NOT NULL,

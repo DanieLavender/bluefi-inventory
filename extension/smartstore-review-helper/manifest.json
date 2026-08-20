@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "블루파이 리뷰 답글 도우미",
+  "version": "1.0.0",
+  "description": "스마트스토어 판매자센터 리뷰에 AI 답글 초안을 제안합니다. AI 호출은 블루파이 서버가 담당합니다 (키는 클라이언트에 없음).",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://sell.smartstore.naver.com/*",
+    "http://cosguardian.lavenderfriends.co.kr:3001/*",
+    "https://cosguardian.lavenderfriends.co.kr/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://sell.smartstore.naver.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "settings.html",
+    "default_title": "블루파이 리뷰 답글 도우미 설정"
+  },
+  "options_page": "settings.html"
+}

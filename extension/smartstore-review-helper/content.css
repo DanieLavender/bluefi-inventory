@@ -1,0 +1,233 @@
+/* 블루파이 리뷰 답글 도우미 — 주입 UI 스타일
+   모든 클래스는 ss-ai- 접두사 (네이버 판매자센터 CSS와 충돌 방지) */
+
+.ss-ai-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ss-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid #4F46E5;
+  border-radius: 6px;
+  background: #4F46E5;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  box-shadow: none;
+}
+
+.ss-ai-btn:hover:not(:disabled) {
+  background: #4338CA;
+  border-color: #4338CA;
+}
+
+.ss-ai-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ss-ai-btn--dead {
+  background: #9CA3AF;
+  border-color: #9CA3AF;
+  cursor: not-allowed;
+}
+
+.ss-ai-link {
+  color: #4F46E5;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+}
+
+.ss-ai-link:hover {
+  color: #4338CA;
+}
+
+/* 로딩 스피너 */
+.ss-ai-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: ss-ai-spin 0.7s linear infinite;
+}
+
+@keyframes ss-ai-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 후보/컨텍스트 패널 */
+.ss-ai-panel {
+  margin: 8px 0;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(17, 24, 39, 0.08);
+  font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  font-size: 13px;
+  color: #111827;
+  overflow: hidden;
+}
+
+.ss-ai-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #F5F5FF;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.ss-ai-panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4F46E5;
+}
+
+.ss-ai-close {
+  background: none;
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+  color: #6B7280;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.ss-ai-close:hover {
+  color: #111827;
+}
+
+/* 저평점 경고 띠 */
+.ss-ai-warn {
+  padding: 7px 12px;
+  background: #FEF2F2;
+  border-bottom: 1px solid #FECACA;
+  color: #B91C1C;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ss-ai-panel-body {
+  padding: 10px 12px;
+}
+
+.ss-ai-cand {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 0 0 8px;
+  padding: 9px 11px;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  background: #FAFAFA;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.55;
+  cursor: pointer;
+  white-space: pre-wrap;
+  word-break: break-word;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.ss-ai-cand:hover {
+  border-color: #4F46E5;
+  background: #F5F5FF;
+}
+
+.ss-ai-cand-num {
+  display: inline-block;
+  margin-right: 6px;
+  color: #4F46E5;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.ss-ai-hint {
+  margin: 2px 0 6px;
+  color: #6B7280;
+  font-size: 11px;
+}
+
+.ss-ai-error {
+  padding: 8px 10px;
+  border: 1px solid #FECACA;
+  border-radius: 6px;
+  background: #FEF2F2;
+  color: #B91C1C;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ss-ai-pre {
+  margin: 0;
+  padding: 10px;
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #374151;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.ss-ai-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid #E5E7EB;
+  background: #FAFAFA;
+}
+
+.ss-ai-btn-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ss-ai-btn-sub:hover:not(:disabled) {
+  border-color: #4F46E5;
+  color: #4F46E5;
+}
+
+.ss-ai-btn-sub:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ss-ai-foot-note {
+  margin-left: auto;
+  color: #9CA3AF;
+  font-size: 11px;
+}

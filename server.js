@@ -5,6 +5,7 @@ const { getPool, initDb, query } = require('./database');
 const { scheduler } = require('./sync-scheduler');
 const { NaverCommerceClient } = require('./smartstore');
 const { CoupangClient } = require('./coupang');
+const reviewReply = require('./review-reply');
 const { ZigzagClient } = require('./zigzag');
 const webpush = require('web-push');
 const multer = require('multer');
@@ -2093,6 +2094,265 @@ app.post('/api/sync/save-keys', async (req, res) => {
     scheduler.storeA = null;
     scheduler.storeB = null;
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== 리뷰 답글 도우미 (스마트스토어 크롬 확장 연동) =====
+// 인수인계 문서 기반: 확장은 스크래핑만, 프롬프트·AI 키·규칙·이력은 전부 서버 담당
+
+async function getReviewReplyConfig() {
+  const rows = await query(
+    "SELECT `key`, value FROM sync_config WHERE `key` IN ('review_reply_token', 'review_reply_rules', 'review_reply_model', 'gemini_api_key')"
+  );
+  const map = {};
+  rows.forEach(r => { map[r.key] = r.value; });
+  return {
+    token: process.env.REVIEW_REPLY_TOKEN || map.review_reply_token || '',
+    rules: map.review_reply_rules || '',
+    model: map.review_reply_model || reviewReply.DEFAULT_MODEL,
+    geminiKey: process.env.GEMINI_API_KEY || map.gemini_api_key || '',
+  };
+}
+
+// 토큰 검증. 토큰이 아직 설정되지 않았으면 셋업 모드로 통과 (최초 설정용).
+// 실패 시 응답을 직접 보내고 null 반환.
+async function reviewReplyAuth(req, res) {
+  const cfg = await getReviewReplyConfig();
+  if (!cfg.token) return cfg;
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (token !== cfg.token) {
+    res.status(401).json({ error: '토큰이 올바르지 않습니다. 확장 프로그램 설정에서 직원 토큰을 확인해주세요.' });
+    return null;
+  }
+  return cfg;
+}
+
+// productNo(스마트스토어 상품번호)로 마스터 DB에서 상품 정보 조회
+async function lookupProductForReview(productNo) {
+  if (!productNo) return null;
+  const rows = await query(
+    'SELECT * FROM products WHERE naver_a_no = ? OR naver_b_no = ? LIMIT 1',
+    [productNo, productNo]
+  );
+  if (rows.length > 0) {
+    const p = rows[0];
+    const variants = await query('SELECT color, size FROM variants WHERE product_id = ?', [p.id]);
+    const colors = [...new Set(variants.map(v => v.color).filter(Boolean))];
+    const info = [
+      `상품명: ${p.name}`,
+      p.brand ? `브랜드: ${p.brand}` : null,
+      colors.length > 0 ? `색상 옵션: ${colors.join(', ')}` : null,
+    ].filter(Boolean).join('\n');
+    return { info, material: reviewReply.extractExplicitMaterial(p.name), sku: p.sku };
+  }
+  const sa = await query('SELECT name FROM store_a_products WHERE channel_product_no = ? LIMIT 1', [productNo]);
+  if (sa.length > 0) {
+    return { info: `상품명: ${sa[0].name}`, material: reviewReply.extractExplicitMaterial(sa[0].name) };
+  }
+  return null;
+}
+
+// 네이버 커머스 API로 상품 상세(소재·속성·태그) 조회 — 7일 캐시 (review_product_cache)
+async function fetchNaverProductDetail(productNo) {
+  if (!productNo) return null;
+  const cached = await query(
+    'SELECT * FROM review_product_cache WHERE channel_product_no = ? AND fetched_at > DATE_SUB(NOW(), INTERVAL 7 DAY)',
+    [productNo]
+  );
+  if (cached.length > 0) {
+    return { info: cached[0].info, material: cached[0].material };
+  }
+  try {
+    await initSyncClients();
+    if (!scheduler.storeA) return null;
+    const detail = await scheduler.storeA.getChannelProduct(productNo);
+    const origin = detail && (detail.originProduct || detail);
+    if (!origin || !origin.name) return null;
+
+    const lines = [`상품명: ${origin.name}`];
+    // 의류 상품정보제공고시의 소재 (판매자가 등록 시 입력한 값 — 가장 신뢰도 높음)
+    let material = origin.detailAttribute?.productInfoProvidedNotice?.wear?.material || null;
+    // 판매자 속성 (소재/핏/신축성 등)
+    const attrs = origin.detailAttribute?.attributes;
+    if (Array.isArray(attrs)) {
+      const attrPairs = attrs.map(a => {
+        const n = a.attributeName || a.name;
+        const v = a.attributeValueName || a.value;
+        return n && v ? `${n}: ${v}` : null;
+      }).filter(Boolean);
+      if (attrPairs.length > 0) lines.push(`속성: ${attrPairs.join(' / ')}`);
+      if (!material) {
+        const mAttr = attrs.find(a => (a.attributeName || '').includes('소재'));
+        if (mAttr) material = mAttr.attributeValueName || null;
+      }
+    }
+    const tags = origin.detailAttribute?.sellerTags;
+    if (Array.isArray(tags) && tags.length > 0) {
+      lines.push(`태그: ${tags.map(t => (t && t.text) || t).filter(Boolean).slice(0, 10).join(', ')}`);
+    }
+    // 고시·속성에 소재가 없으면 상품명의 명시적 소재 단어만 (지뢰 9)
+    if (!material) material = reviewReply.extractExplicitMaterial(origin.name);
+    if (material) lines.push(`소재: ${material}`);
+
+    const info = lines.join('\n');
+    await query(
+      'INSERT INTO review_product_cache (channel_product_no, info, material, fetched_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE info = VALUES(info), material = VALUES(material), fetched_at = NOW()',
+      [productNo, info, material]
+    );
+    return { info, material };
+  } catch (e) {
+    console.log('[ReviewReply] 네이버 상품 상세 조회 실패:', e.message);
+    return null;
+  }
+}
+
+// GET /api/review-reply/config - 설정 조회 (키는 존재 여부만)
+app.get('/api/review-reply/config', async (req, res) => {
+  try {
+    const cfg = await reviewReplyAuth(req, res);
+    if (!cfg) return;
+    res.json({
+      rules: cfg.rules,
+      model: cfg.model,
+      hasGeminiKey: !!cfg.geminiKey,
+      tokenSet: !!cfg.token,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/review-reply/config - 규칙/모델/키/토큰 저장 (UPSERT)
+app.put('/api/review-reply/config', async (req, res) => {
+  try {
+    const cfg = await reviewReplyAuth(req, res);
+    if (!cfg) return;
+    const { rules, model, gemini_api_key, token } = req.body;
+    const upsertSql = 'INSERT INTO sync_config (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)';
+    if (rules !== undefined) await query(upsertSql, ['review_reply_rules', String(rules)]);
+    if (model !== undefined && model) await query(upsertSql, ['review_reply_model', String(model)]);
+    if (gemini_api_key) await query(upsertSql, ['gemini_api_key', String(gemini_api_key)]);
+    if (token) await query(upsertSql, ['review_reply_token', String(token)]);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/review-reply/test - Gemini 연결 테스트
+app.post('/api/review-reply/test', async (req, res) => {
+  try {
+    const cfg = await reviewReplyAuth(req, res);
+    if (!cfg) return;
+    if (!cfg.geminiKey) return res.json({ success: false, message: 'Gemini API 키가 설정되지 않았습니다.' });
+    const text = await reviewReply.callGemini(cfg.geminiKey, cfg.model, '당신은 테스트 응답기입니다.', '"OK"라고만 답하세요.');
+    res.json({ success: true, message: `연결 성공 (모델: ${cfg.model}, 응답: ${text.slice(0, 40)})` });
+  } catch (e) {
+    // 실패 시 제공자 원문 오류를 그대로 노출 (인수인계 문서 원칙)
+    res.json({ success: false, message: e.message });
+  }
+});
+
+// POST /api/review-reply - 리뷰 답글 후보 3개 생성
+app.post('/api/review-reply', async (req, res) => {
+  try {
+    const cfg = await reviewReplyAuth(req, res);
+    if (!cfg) return;
+    if (!cfg.geminiKey) {
+      return res.status(503).json({ error: 'Gemini API 키가 서버에 설정되지 않았습니다.' });
+    }
+    const { productNo, orderNo, rating, productName, option, reviewText, siblingReviews } = req.body;
+    // 지뢰 7: 클라이언트 필터를 통과했더라도 서버에서 신체정보·UI 문구 재차 제거
+    const cleanReview = reviewReply.sanitizeReviewText(reviewText);
+    if (!cleanReview) {
+      return res.status(400).json({ error: '리뷰 내용이 비어 있습니다.' });
+    }
+
+    // 상품 정보: 네이버 API 상세(소재·속성, 캐시) 우선 + 마스터 DB 보조
+    let product = await fetchNaverProductDetail(productNo);
+    const dbProduct = await lookupProductForReview(productNo);
+    if (product && dbProduct) {
+      product = {
+        info: product.info + (dbProduct.sku ? `\n품번: ${dbProduct.sku}` : ''),
+        material: product.material || dbProduct.material,
+        sku: dbProduct.sku,
+      };
+    } else if (!product) {
+      product = dbProduct;
+    }
+
+    // 같은 상품의 과거 생성 이력 — 표현 중복 회피에 사용
+    let pastReplies = [];
+    if (productNo) {
+      const past = await query(
+        'SELECT candidates FROM review_replies WHERE product_no = ? ORDER BY created_at DESC LIMIT 5',
+        [productNo]
+      );
+      pastReplies = past.map(r => {
+        try { return JSON.parse(r.candidates)[0]; } catch { return null; }
+      }).filter(Boolean);
+    }
+
+    // 확장이 화면에서 수집한 동일 상품 타 리뷰·기존 답글 — 서버에서도 재정제
+    const cleanSiblings = Array.isArray(siblingReviews)
+      ? siblingReviews.slice(0, 5).map(s => ({
+          reviewText: reviewReply.sanitizeReviewText(s && s.reviewText).slice(0, 300),
+          existingReply: s && s.existingReply ? String(s.existingReply).slice(0, 300) : null,
+        })).filter(s => s.reviewText || s.existingReply)
+      : [];
+
+    const systemPrompt = reviewReply.buildSystemPrompt({
+      rules: cfg.rules,
+      product,
+      rating,
+      productName: productName || '',
+      pastReplies,
+      siblingReviews: cleanSiblings,
+    });
+    const userParts = [];
+    if (productName) userParts.push(`상품명: ${productName}`);
+    if (option) userParts.push(`구매 옵션: ${option}`);
+    if (rating) userParts.push(`별점: ${rating}점`);
+    userParts.push(`리뷰 내용:\n${cleanReview}`);
+
+    const raw = await reviewReply.callGemini(cfg.geminiKey, cfg.model, systemPrompt, userParts.join('\n'));
+    const candidates = reviewReply.parseCandidates(raw);
+    if (candidates.length === 0) {
+      return res.status(502).json({ error: 'AI 응답에서 답글 후보를 추출하지 못했습니다.' });
+    }
+
+    // 이력 저장 (중복 답글 방지·사용량 통계용)
+    await query(
+      'INSERT INTO review_replies (order_no, product_no, product_name, rating, review_text, candidates) VALUES (?, ?, ?, ?, ?, ?)',
+      [orderNo || null, productNo || null, (productName || '').slice(0, 500), parseInt(rating) || null,
+       cleanReview.slice(0, 2000), JSON.stringify(candidates)]
+    );
+
+    res.json({
+      candidates,
+      usedProduct: product ? { material: product.material || null, sku: product.sku || null } : null,
+      needsHumanReview: Number(rating) > 0 && Number(rating) <= 2,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/review-reply/history - 답글 생성 이력 (중복 확인용)
+app.get('/api/review-reply/history', async (req, res) => {
+  try {
+    const cfg = await reviewReplyAuth(req, res);
+    if (!cfg) return;
+    const { orderNo, limit = 20 } = req.query;
+    let rows;
+    if (orderNo) {
+      rows = await query('SELECT * FROM review_replies WHERE order_no = ? ORDER BY created_at DESC', [orderNo]);
+    } else {
+      rows = await query('SELECT id, order_no, product_no, product_name, rating, created_at FROM review_replies ORDER BY created_at DESC LIMIT ?', [Math.min(parseInt(limit) || 20, 100)]);
+    }
+    res.json({ items: rows });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
