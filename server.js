@@ -2346,25 +2346,27 @@ app.post('/api/review-reply', async (req, res) => {
         })).filter(s => s.reviewText || s.existingReply)
       : [];
 
-    const systemPrompt = reviewReply.buildSystemPrompt({
+    const promptOpts = {
       rules: cfg.rules,
       product,
       rating,
       productName: productName || '',
       pastReplies,
       siblingReviews: cleanSiblings,
-    });
+    };
+    // Gemini용(1회 호출·후보 3개) / Ollama용(호출당 1개) 프롬프트 각각 준비
+    const prompts = {
+      multi: reviewReply.buildSystemPrompt(promptOpts),
+      single: reviewReply.buildSystemPrompt({ ...promptOpts, single: true }),
+    };
     const userParts = [];
     if (productName) userParts.push(`상품명: ${productName}`);
     if (option) userParts.push(`구매 옵션: ${option}`);
     if (rating) userParts.push(`별점: ${rating}점`);
     userParts.push(`리뷰 내용:\n${cleanReview}`);
 
-    const gen = await reviewReply.generateWithFallback(cfg, systemPrompt, userParts.join('\n'));
-    const candidates = reviewReply.parseCandidates(gen.text);
-    if (candidates.length === 0) {
-      return res.status(502).json({ error: 'AI 응답에서 답글 후보를 추출하지 못했습니다.' });
-    }
+    const gen = await reviewReply.generateWithFallback(cfg, prompts, userParts.join('\n'));
+    const candidates = gen.candidates;
 
     // 이력 저장 (중복 답글 방지·사용량 통계용)
     await query(

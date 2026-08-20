@@ -53,14 +53,20 @@ function extractExplicitMaterial(name) {
 
 // ===== 시스템 프롬프트 조립 =====
 // 인수인계 문서의 buildSystemPrompt 역할. 모든 지침이 이 함수 한 곳에 모임.
-function buildSystemPrompt({ rules, product, rating, productName, pastReplies, siblingReviews }) {
+function buildSystemPrompt({ rules, product, rating, productName, pastReplies, siblingReviews, single }) {
   const isLowRating = Number(rating) > 0 && Number(rating) <= 2;
   const material = (product && product.material) || extractExplicitMaterial(productName);
 
   const lines = [];
   lines.push('당신은 한국 여성의류 쇼핑몰 "블루파이"의 스마트스토어 리뷰 답글 담당자입니다.');
-  lines.push('구매자가 남긴 리뷰에 대한 판매자 답글 후보를 정확히 3개 작성하세요.');
-  lines.push('각 후보는 반드시 "---" 한 줄로만 구분하세요. 다른 설명·번호·머리말은 일절 출력하지 마세요.');
+  if (single) {
+    // Ollama 등 소형 모델용: 한 호출에 1개만 — 지시 준수율이 훨씬 높음
+    lines.push('구매자가 남긴 리뷰에 대한 판매자 답글을 정확히 1개만 작성하세요.');
+    lines.push('답글 본문만 출력하세요. 설명·번호·머리말·구분선은 일절 출력하지 마세요.');
+  } else {
+    lines.push('구매자가 남긴 리뷰에 대한 판매자 답글 후보를 정확히 3개 작성하세요.');
+    lines.push('각 후보는 반드시 "---" 한 줄로만 구분하세요. 다른 설명·번호·머리말은 일절 출력하지 마세요.');
+  }
   // 현재 계절 주입 — 상품명의 계절 단어에 끌려 엉뚱한 계절 인사를 하는 것 방지
   const month = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCMonth() + 1; // KST
   const season = month >= 3 && month <= 5 ? '봄' : month >= 6 && month <= 8 ? '여름' : month >= 9 && month <= 11 ? '가을' : '겨울';
@@ -201,7 +207,7 @@ async function callGemini(apiKey, model, systemPrompt, userText) {
 }
 
 // ===== Ollama (OpenAI 호환 API) — Gemini 폴백 =====
-async function callOllama(baseUrl, apiKey, model, systemPrompt, userText) {
+async function callOllama(baseUrl, apiKey, model, systemPrompt, userText, temperature = 0.7) {
   const url = String(baseUrl).replace(/\/+$/, '') + '/chat/completions';
   const res = await fetch(url, {
     method: 'POST',
@@ -215,7 +221,7 @@ async function callOllama(baseUrl, apiKey, model, systemPrompt, userText) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userText },
       ],
-      temperature: 0.7,
+      temperature,
     }),
   });
   const body = await res.text();
@@ -227,23 +233,44 @@ async function callOllama(baseUrl, apiKey, model, systemPrompt, userText) {
 }
 
 // Gemini 우선 → 실패(429 한도 등) 시 Ollama 폴백
-async function generateWithFallback(cfg, systemPrompt, userText) {
+// 통신 전략: Gemini는 토큰 비용이 있으므로 1회 호출로 후보 3개(--- 구분).
+// Ollama는 비용이 없으므로 병렬 5회 호출(호출당 후보 1개, 온도 다양화) — 소형 모델 지시 준수율도 개선.
+const OLLAMA_TEMPS = [0.6, 0.8, 0.95, 1.05, 0.9];
+
+async function generateWithFallback(cfg, prompts, userText) {
   const errors = [];
   if (cfg.geminiKey) {
     try {
-      const text = await callGemini(cfg.geminiKey, cfg.model, systemPrompt, userText);
-      return { text, provider: 'gemini:' + (cfg.model || DEFAULT_MODEL) };
+      const text = await callGemini(cfg.geminiKey, cfg.model, prompts.multi, userText);
+      const candidates = parseCandidates(text);
+      if (candidates.length > 0) {
+        return { candidates, provider: 'gemini:' + (cfg.model || DEFAULT_MODEL) };
+      }
+      errors.push('Gemini: 응답에서 후보를 추출하지 못했습니다.');
     } catch (e) {
       errors.push('Gemini: ' + e.message);
     }
   }
   if (cfg.ollamaUrl && cfg.ollamaModel) {
-    try {
-      const text = await callOllama(cfg.ollamaUrl, cfg.ollamaKey, cfg.ollamaModel, systemPrompt, userText);
-      return { text, provider: 'ollama:' + cfg.ollamaModel };
-    } catch (e) {
-      errors.push('Ollama: ' + e.message);
+    const settled = await Promise.allSettled(
+      OLLAMA_TEMPS.map(t => callOllama(cfg.ollamaUrl, cfg.ollamaKey, cfg.ollamaModel, prompts.single, userText, t))
+    );
+    const candidates = [];
+    const seen = new Set();
+    for (const s of settled) {
+      if (s.status !== 'fulfilled') continue;
+      const c = (parseCandidates(s.value)[0] || String(s.value)).trim();
+      const norm = c.replace(/\s+/g, ' ').trim();
+      if (norm && !seen.has(norm)) {
+        seen.add(norm);
+        candidates.push(c);
+      }
     }
+    if (candidates.length > 0) {
+      return { candidates: candidates.slice(0, 5), provider: 'ollama:' + cfg.ollamaModel };
+    }
+    const firstFail = settled.find(s => s.status === 'rejected');
+    errors.push('Ollama: ' + (firstFail ? firstFail.reason.message : '유효한 후보 없음'));
   }
   throw new Error(errors.length > 0 ? errors.join('\n') : 'AI 제공자(Gemini 또는 Ollama)가 설정되지 않았습니다.');
 }
