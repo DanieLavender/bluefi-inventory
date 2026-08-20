@@ -778,6 +778,62 @@
             font-size: 13px;
         }
         .group-variant-item:last-child { border-bottom: none; }
+
+        /* 그룹 뷰 인라인 옵션 추가 */
+        .option-add-btn {
+            background: none;
+            border: 1px dashed var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .option-add-btn:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+            background: rgba(37, 99, 235, 0.05);
+        }
+        .option-add-row td { padding-top: 4px; padding-bottom: 8px; }
+        .opt-input {
+            width: 100%;
+            max-width: 110px;
+            padding: 5px 8px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: inherit;
+            background: var(--bg-card);
+        }
+        .opt-input:focus { outline: none; border-color: var(--accent); }
+        .opt-input-qty { max-width: 64px; text-align: center; }
+        .opt-form-actions { display: flex; gap: 4px; align-items: center; }
+        .opt-save-btn {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .opt-save-btn:hover { opacity: 0.85; }
+        .opt-cancel-btn {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-size: 12px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .option-add-row-mobile { justify-content: center; padding: 6px 12px; }
+        .option-form-mobile { gap: 6px; }
+        .option-form-mobile .opt-input { max-width: none; flex: 1; min-width: 0; }
+        .option-form-mobile .opt-input-qty { flex: 0 0 52px; }
         .group-variant-left {
             display: flex;
             align-items: center;
@@ -3040,6 +3096,10 @@
 
     <!-- ===== Dropdown Menu (shared) ===== -->
     <div class="dropdown-menu" id="dropdownMenu">
+        <button class="dropdown-item" onclick="dropdownAddOption()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            옵션 추가
+        </button>
         <button class="dropdown-item" onclick="dropdownEdit()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             수정
@@ -3108,6 +3168,7 @@
     let pendingDeleteIds = [];
     let viewMode = localStorage.getItem('viewMode') || 'flat';
     let collapsedGroups = new Set();
+    let optionFormGroup = null; // 그룹 뷰 인라인 옵션 추가 폼이 열린 그룹명
 
     // ===== Router =====
     const pageTitles = {
@@ -3231,6 +3292,13 @@
         }
     }
 
+    function dropdownAddOption() {
+        closeDropdown();
+        const item = currentItems.find(i => i.id === dropdownData.id);
+        if (!item) return;
+        openAddModal({ brand: item.brand, name: item.name });
+    }
+
     let editTargetId = null;
     async function openEditModal(id, name) {
         editTargetId = id;
@@ -3351,7 +3419,9 @@
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({ error: '서버 오류' }));
-            throw new Error(err.error || '요청 실패');
+            const error = new Error(err.error || '요청 실패');
+            error.payload = err;
+            throw error;
         }
         return res.json();
     }
@@ -3448,6 +3518,63 @@
         if (collapsedGroups.has(groupName)) collapsedGroups.delete(groupName);
         else collapsedGroups.add(groupName);
         render();
+    }
+
+    // ===== 그룹 뷰 인라인 옵션 추가 =====
+    function showOptionForm(groupName) {
+        optionFormGroup = groupName;
+        render();
+        const colorInput = [...document.querySelectorAll('#optColorD, #optColorM')].find(el => el.offsetParent);
+        if (colorInput) colorInput.focus();
+    }
+
+    function cancelOptionForm() {
+        optionFormGroup = null;
+        render();
+    }
+
+    async function saveInlineOption(ctx) {
+        const suffix = ctx === 'm' ? 'M' : 'D';
+        const group = currentGroups.find(g => g.name === optionFormGroup);
+        if (!group) { cancelOptionForm(); return; }
+        const color = document.getElementById('optColor' + suffix).value.trim();
+        const size = document.getElementById('optSize' + suffix).value.trim() || undefined;
+        const qty = Math.max(0, parseInt(document.getElementById('optQty' + suffix).value) || 0);
+        if (!color) { showToast('컬러를 입력해주세요.', 'error'); return; }
+
+        try {
+            await api('/api/inventory', {
+                method: 'POST',
+                body: JSON.stringify({ name: group.name, color, qty, brand: group.brand, size, dedupe: true })
+            });
+            optionFormGroup = null;
+            showToast(`"${group.name}" 에 ${color}${size ? ' · ' + size : ''} 옵션이 추가되었습니다.`, 'success');
+            loadStats();
+            loadData();
+            updateRefreshTime();
+        } catch (e) {
+            const dup = e.payload && e.payload.duplicate && e.payload.existing;
+            if (dup) {
+                const ex = e.payload.existing;
+                if (confirm(`이미 등록된 옵션입니다 (현재 ${ex.qty}개).\n수량을 ${qty}개 더할까요? (${ex.qty} → ${ex.qty + qty})`)) {
+                    try {
+                        await api(`/api/inventory/${ex.id}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ qty: ex.qty + qty })
+                        });
+                        optionFormGroup = null;
+                        showToast(`기존 옵션 수량이 ${ex.qty + qty}개로 반영되었습니다.`, 'success');
+                        loadStats();
+                        loadData();
+                        updateRefreshTime();
+                    } catch (e2) {
+                        showToast('수량 반영 실패: ' + e2.message, 'error');
+                    }
+                }
+            } else {
+                showToast('옵션 추가 실패: ' + e.message, 'error');
+            }
+        }
     }
 
     function debounceSearch() {
@@ -3642,6 +3769,34 @@
                         </td>
                     </tr>`;
                 });
+
+                // 인라인 옵션 추가: 폼 열림 상태면 입력행, 아니면 + 버튼행
+                if (optionFormGroup === group.name) {
+                    tableHtml += `<tr class="variant-row option-form-row">
+                        <td class="col-check"></td>
+                        <td class="col-no"></td>
+                        <td class="col-brand"></td>
+                        <td class="col-name" style="text-align:right;color:var(--text-muted);font-size:12px;">새 옵션</td>
+                        <td class="col-color"><input id="optColorD" class="opt-input" placeholder="컬러" onkeydown="if(event.key==='Enter')saveInlineOption('d')"></td>
+                        <td class="col-size"><input id="optSizeD" class="opt-input" placeholder="사이즈(선택)" onkeydown="if(event.key==='Enter')saveInlineOption('d')"></td>
+                        <td class="col-qty"><input id="optQtyD" class="opt-input opt-input-qty" type="number" min="0" value="1" onkeydown="if(event.key==='Enter')saveInlineOption('d')"></td>
+                        <td class="col-date" colspan="2">
+                            <div class="opt-form-actions">
+                                <button class="opt-save-btn" onclick="event.stopPropagation();saveInlineOption('d')">저장</button>
+                                <button class="opt-cancel-btn" onclick="event.stopPropagation();cancelOptionForm()">취소</button>
+                            </div>
+                        </td>
+                    </tr>`;
+                } else {
+                    tableHtml += `<tr class="variant-row option-add-row">
+                        <td class="col-check"></td>
+                        <td class="col-no"></td>
+                        <td class="col-brand"></td>
+                        <td colspan="6">
+                            <button class="option-add-btn" onclick="event.stopPropagation();showOptionForm('${escapedName}')">+ 옵션 추가</button>
+                        </td>
+                    </tr>`;
+                }
             }
         });
         tbody.innerHTML = tableHtml;
@@ -3693,6 +3848,22 @@
                         </div>
                     </div>`;
                 });
+
+                if (optionFormGroup === group.name) {
+                    cardHtml += `<div class="group-variant-item option-form-mobile">
+                        <input id="optColorM" class="opt-input" placeholder="컬러" onkeydown="if(event.key==='Enter')saveInlineOption('m')">
+                        <input id="optSizeM" class="opt-input" placeholder="사이즈" onkeydown="if(event.key==='Enter')saveInlineOption('m')">
+                        <input id="optQtyM" class="opt-input opt-input-qty" type="number" min="0" value="1" onkeydown="if(event.key==='Enter')saveInlineOption('m')">
+                        <div class="opt-form-actions">
+                            <button class="opt-save-btn" onclick="event.stopPropagation();saveInlineOption('m')">저장</button>
+                            <button class="opt-cancel-btn" onclick="event.stopPropagation();cancelOptionForm()">취소</button>
+                        </div>
+                    </div>`;
+                } else {
+                    cardHtml += `<div class="group-variant-item option-add-row-mobile">
+                        <button class="option-add-btn" onclick="event.stopPropagation();showOptionForm('${escapedName}')">+ 옵션 추가</button>
+                    </div>`;
+                }
                 cardHtml += `</div>`;
             }
 
@@ -3963,7 +4134,7 @@
     }
 
     // ===== Add Item =====
-    function openAddModal() {
+    function openAddModal(prefill) {
         const select = document.getElementById('inputBrand');
         const brands = [...document.getElementById('brandFilter').options]
             .map(o => o.value).filter(v => v);
@@ -3993,6 +4164,24 @@
         document.getElementById('naverReturnList').innerHTML = '';
         document.getElementById('naverFetchBtn').disabled = false;
         document.getElementById('naverFetchBtn').innerHTML = '<span>&#128230;</span> 네이버 반품/수거 불러오기';
+
+        // 옵션 추가 진입: 브랜드/상품명 미리 채우고 컬러 입력에 포커스
+        if (prefill && prefill.name) {
+            const rawName = prefill.brand
+                ? prefill.name.replace(new RegExp('^' + prefill.brand + '\\s*'), '')
+                : prefill.name;
+            const brandExists = [...select.options].some(o => o.value === prefill.brand);
+            if (prefill.brand && brandExists) {
+                select.value = prefill.brand;
+            } else if (prefill.brand) {
+                select.value = '__custom__';
+                document.getElementById('inputCustomBrand').value = prefill.brand;
+                document.getElementById('customBrandGroup').style.display = 'block';
+            }
+            document.getElementById('inputName').value = rawName;
+            setTimeout(() => document.getElementById('inputColor').focus(), 50);
+        }
+
         document.getElementById('addModal').classList.add('active');
         lockBodyScroll();
     }
@@ -4856,7 +5045,8 @@
         try {
             await api('/api/inventory', {
                 method: 'POST',
-                body: JSON.stringify({ name, color, qty, brand, productOrderId, channelProductNo, size })
+                // 수동 등록(반품 불러오기 아님)일 때만 동일 옵션 중복 차단
+                body: JSON.stringify({ name, color, qty, brand, productOrderId, channelProductNo, size, dedupe: !productOrderId })
             });
             closeAddModal();
             showToast(`"${name}" 이(가) 추가되었습니다.`, 'success');
@@ -4900,7 +5090,26 @@
             currentPage = 999;
             loadData();
         } catch (e) {
-            showToast('추가 실패: ' + e.message, 'error');
+            const dup = e.payload && e.payload.duplicate && e.payload.existing;
+            if (dup) {
+                const ex = e.payload.existing;
+                if (confirm(`이미 등록된 옵션입니다 (현재 ${ex.qty}개).\n수량을 ${qty}개 더할까요? (${ex.qty} → ${ex.qty + qty})`)) {
+                    try {
+                        await api(`/api/inventory/${ex.id}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ qty: ex.qty + qty })
+                        });
+                        closeAddModal();
+                        showToast(`기존 옵션 수량이 ${ex.qty + qty}개로 반영되었습니다.`, 'success');
+                        loadStats();
+                        loadData();
+                    } catch (e2) {
+                        showToast('수량 반영 실패: ' + e2.message, 'error');
+                    }
+                }
+            } else {
+                showToast('추가 실패: ' + e.message, 'error');
+            }
         } finally {
             _isSubmitting = false;
         }

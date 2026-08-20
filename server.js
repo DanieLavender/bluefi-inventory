@@ -872,7 +872,7 @@ app.delete('/api/brands/:code', async (req, res) => {
 // POST /api/inventory - 재고 추가
 app.post('/api/inventory', async (req, res) => {
   try {
-    const { name, color, qty, brand: inputBrand, productOrderId, channelProductNo, size } = req.body;
+    const { name, color, qty, brand: inputBrand, productOrderId, channelProductNo, size, dedupe } = req.body;
     if (!name || !color) {
       return res.status(400).json({ error: '상품명과 컬러는 필수입니다.' });
     }
@@ -894,6 +894,17 @@ app.post('/api/inventory', async (req, res) => {
     const trimmedName = name.trim();
     const trimmedColor = color.trim();
     const trimmedSize = size ? size.trim() : null;
+
+    // 옵션 간편 추가 등에서 dedupe 플래그를 보내면 동일 상품명+컬러+사이즈 중복을 차단
+    if (dedupe) {
+      const dupOptions = await query(
+        'SELECT * FROM inventory WHERE name = ? AND color = ? AND ((size IS NULL AND ? IS NULL) OR size = ?) LIMIT 1',
+        [trimmedName, trimmedColor, trimmedSize, trimmedSize]
+      );
+      if (dupOptions.length > 0) {
+        return res.status(409).json({ error: '이미 등록된 옵션입니다.', duplicate: true, existing: dupOptions[0] });
+      }
+    }
 
     const result = await query(
       'INSERT INTO inventory (name, color, qty, brand, channel_product_no, size) VALUES (?, ?, ?, ?, ?, ?)',
