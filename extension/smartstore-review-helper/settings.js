@@ -98,6 +98,27 @@ async function testConnection() {
   }
 }
 
+async function saveGeminiKey() {
+  const btn = $('saveKeyBtn');
+  const key = $('geminiKey').value.trim();
+  if (!key) {
+    setStatus('keyStatus', 'err', 'API 키를 입력해주세요.');
+    return;
+  }
+  btn.disabled = true;
+  setStatus('keyStatus', 'info', '키 저장 중…');
+  try {
+    await api('/api/review-reply/config', 'PUT', { gemini_api_key: key });
+    $('geminiKey').value = ''; // 키를 화면·브라우저에 남기지 않음 (서버에만 저장)
+    setStatus('keyStatus', 'ok', '키가 서버에 저장되었습니다. 위의 [연결 테스트]로 확인해보세요.');
+    loadRules(true); // 메타 표시 갱신 (Gemini 키: 서버에 설정됨)
+  } catch (e) {
+    setStatus('keyStatus', 'err', e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function loadRules(silent) {
   const btn = $('loadRulesBtn');
   btn.disabled = true;
@@ -143,6 +164,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveStored().catch((e) => setStatus('connStatus', 'err', e.message));
   });
   $('testBtn').addEventListener('click', testConnection);
+  $('saveKeyBtn').addEventListener('click', saveGeminiKey);
   $('loadRulesBtn').addEventListener('click', () => loadRules(false));
   $('saveRulesBtn').addEventListener('click', saveRules);
 

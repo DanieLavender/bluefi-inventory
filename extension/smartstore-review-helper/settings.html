@@ -123,6 +123,17 @@
   </div>
 
   <div class="card">
+    <h2>Gemini API 키 (서버 저장)</h2>
+    <p class="note">키는 서버에만 저장되며 이 확장이나 브라우저에는 남지 않습니다. 발급: aistudio.google.com/apikey</p>
+    <label for="geminiKey">API 키</label>
+    <input type="password" id="geminiKey" placeholder="AIza… 로 시작하는 키 붙여넣기">
+    <div class="row">
+      <button id="saveKeyBtn">키 저장</button>
+    </div>
+    <div class="status" id="keyStatus"></div>
+  </div>
+
+  <div class="card">
     <h2>스토어 답글 규칙 (서버 저장)</h2>
     <p class="note">규칙은 서버에 저장되어 확장 재배포 없이 수정할 수 있습니다.</p>
     <label for="rules">답글 작성 규칙</label>
