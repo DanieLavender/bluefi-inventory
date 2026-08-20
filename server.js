@@ -2104,7 +2104,7 @@ app.post('/api/sync/save-keys', async (req, res) => {
 
 async function getReviewReplyConfig() {
   const rows = await query(
-    "SELECT `key`, value FROM sync_config WHERE `key` IN ('review_reply_token', 'review_reply_rules', 'review_reply_model', 'gemini_api_key')"
+    "SELECT `key`, value FROM sync_config WHERE `key` IN ('review_reply_token', 'review_reply_rules', 'review_reply_model', 'gemini_api_key', 'ollama_base_url', 'ollama_api_key', 'ollama_model')"
   );
   const map = {};
   rows.forEach(r => { map[r.key] = r.value; });
@@ -2113,6 +2113,9 @@ async function getReviewReplyConfig() {
     rules: map.review_reply_rules || '',
     model: map.review_reply_model || reviewReply.DEFAULT_MODEL,
     geminiKey: process.env.GEMINI_API_KEY || map.gemini_api_key || '',
+    ollamaUrl: process.env.OLLAMA_BASE_URL || map.ollama_base_url || '',
+    ollamaKey: process.env.OLLAMA_API_KEY || map.ollama_api_key || '',
+    ollamaModel: map.ollama_model || 'qwen2.5:7b',
   };
 }
 
@@ -2231,6 +2234,8 @@ app.get('/api/review-reply/config', async (req, res) => {
       rules: cfg.rules,
       model: cfg.model,
       hasGeminiKey: !!cfg.geminiKey,
+      hasOllama: !!(cfg.ollamaUrl && cfg.ollamaModel),
+      ollamaModel: cfg.ollamaUrl ? cfg.ollamaModel : null,
       tokenSet: !!cfg.token,
     });
   } catch (e) {
@@ -2243,12 +2248,15 @@ app.put('/api/review-reply/config', async (req, res) => {
   try {
     const cfg = await reviewReplyAuth(req, res);
     if (!cfg) return;
-    const { rules, model, gemini_api_key, token } = req.body;
+    const { rules, model, gemini_api_key, token, ollama_base_url, ollama_api_key, ollama_model } = req.body;
     const upsertSql = 'INSERT INTO sync_config (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)';
     if (rules !== undefined) await query(upsertSql, ['review_reply_rules', String(rules)]);
     if (model !== undefined && model) await query(upsertSql, ['review_reply_model', String(model)]);
     if (gemini_api_key) await query(upsertSql, ['gemini_api_key', String(gemini_api_key)]);
     if (token) await query(upsertSql, ['review_reply_token', String(token)]);
+    if (ollama_base_url !== undefined) await query(upsertSql, ['ollama_base_url', String(ollama_base_url)]);
+    if (ollama_api_key) await query(upsertSql, ['ollama_api_key', String(ollama_api_key)]);
+    if (ollama_model !== undefined && ollama_model) await query(upsertSql, ['ollama_model', String(ollama_model)]);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2260,9 +2268,30 @@ app.post('/api/review-reply/test', async (req, res) => {
   try {
     const cfg = await reviewReplyAuth(req, res);
     if (!cfg) return;
-    if (!cfg.geminiKey) return res.json({ success: false, message: 'Gemini API 키가 설정되지 않았습니다.' });
-    const text = await reviewReply.callGemini(cfg.geminiKey, cfg.model, '당신은 테스트 응답기입니다.', '"OK"라고만 답하세요.');
-    res.json({ success: true, message: `연결 성공 (모델: ${cfg.model}, 응답: ${text.slice(0, 40)})` });
+    // 제공자별로 각각 테스트해 상태를 모두 보고
+    const results = [];
+    if (cfg.geminiKey) {
+      try {
+        const t = await reviewReply.callGemini(cfg.geminiKey, cfg.model, '당신은 테스트 응답기입니다.', '"OK"라고만 답하세요.');
+        results.push(`Gemini(${cfg.model}): 성공 (응답: ${t.slice(0, 20)})`);
+      } catch (e) {
+        results.push(`Gemini(${cfg.model}): 실패 — ${e.message.slice(0, 200)}`);
+      }
+    } else {
+      results.push('Gemini: 키 미설정');
+    }
+    if (cfg.ollamaUrl && cfg.ollamaModel) {
+      try {
+        const t = await reviewReply.callOllama(cfg.ollamaUrl, cfg.ollamaKey, cfg.ollamaModel, '당신은 테스트 응답기입니다.', '"OK"라고만 답하세요.');
+        results.push(`Ollama(${cfg.ollamaModel}): 성공 (응답: ${t.slice(0, 20)})`);
+      } catch (e) {
+        results.push(`Ollama(${cfg.ollamaModel}): 실패 — ${e.message.slice(0, 200)}`);
+      }
+    } else {
+      results.push('Ollama: 미설정 (폴백 없음)');
+    }
+    const anyOk = results.some(r => r.includes('성공'));
+    res.json({ success: anyOk, message: results.join('\n') });
   } catch (e) {
     // 실패 시 제공자 원문 오류를 그대로 노출 (인수인계 문서 원칙)
     res.json({ success: false, message: e.message });
@@ -2274,8 +2303,8 @@ app.post('/api/review-reply', async (req, res) => {
   try {
     const cfg = await reviewReplyAuth(req, res);
     if (!cfg) return;
-    if (!cfg.geminiKey) {
-      return res.status(503).json({ error: 'Gemini API 키가 서버에 설정되지 않았습니다.' });
+    if (!cfg.geminiKey && !(cfg.ollamaUrl && cfg.ollamaModel)) {
+      return res.status(503).json({ error: 'AI 제공자(Gemini 키 또는 Ollama)가 서버에 설정되지 않았습니다.' });
     }
     const { productNo, orderNo, rating, productName, option, reviewText, siblingReviews } = req.body;
     // 지뢰 7: 클라이언트 필터를 통과했더라도 서버에서 신체정보·UI 문구 재차 제거
@@ -2331,8 +2360,8 @@ app.post('/api/review-reply', async (req, res) => {
     if (rating) userParts.push(`별점: ${rating}점`);
     userParts.push(`리뷰 내용:\n${cleanReview}`);
 
-    const raw = await reviewReply.callGemini(cfg.geminiKey, cfg.model, systemPrompt, userParts.join('\n'));
-    const candidates = reviewReply.parseCandidates(raw);
+    const gen = await reviewReply.generateWithFallback(cfg, systemPrompt, userParts.join('\n'));
+    const candidates = reviewReply.parseCandidates(gen.text);
     if (candidates.length === 0) {
       return res.status(502).json({ error: 'AI 응답에서 답글 후보를 추출하지 못했습니다.' });
     }
@@ -2346,6 +2375,7 @@ app.post('/api/review-reply', async (req, res) => {
 
     res.json({
       candidates,
+      provider: gen.provider,
       usedProduct: product ? { material: product.material || null, sku: product.sku || null } : null,
       needsHumanReview: Number(rating) > 0 && Number(rating) <= 2,
     });

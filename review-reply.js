@@ -193,6 +193,54 @@ async function callGemini(apiKey, model, systemPrompt, userText) {
   }
 }
 
+// ===== Ollama (OpenAI 호환 API) — Gemini 폴백 =====
+async function callOllama(baseUrl, apiKey, model, systemPrompt, userText) {
+  const url = String(baseUrl).replace(/\/+$/, '') + '/chat/completions';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + (apiKey || ''),
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userText },
+      ],
+      temperature: 0.7,
+    }),
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`Ollama API 오류 (${res.status}): ${body.slice(0, 300)}`);
+  const data = JSON.parse(body);
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Ollama: 빈 응답');
+  return text;
+}
+
+// Gemini 우선 → 실패(429 한도 등) 시 Ollama 폴백
+async function generateWithFallback(cfg, systemPrompt, userText) {
+  const errors = [];
+  if (cfg.geminiKey) {
+    try {
+      const text = await callGemini(cfg.geminiKey, cfg.model, systemPrompt, userText);
+      return { text, provider: 'gemini:' + (cfg.model || DEFAULT_MODEL) };
+    } catch (e) {
+      errors.push('Gemini: ' + e.message);
+    }
+  }
+  if (cfg.ollamaUrl && cfg.ollamaModel) {
+    try {
+      const text = await callOllama(cfg.ollamaUrl, cfg.ollamaKey, cfg.ollamaModel, systemPrompt, userText);
+      return { text, provider: 'ollama:' + cfg.ollamaModel };
+    } catch (e) {
+      errors.push('Ollama: ' + e.message);
+    }
+  }
+  throw new Error(errors.length > 0 ? errors.join('\n') : 'AI 제공자(Gemini 또는 Ollama)가 설정되지 않았습니다.');
+}
+
 // ===== 상세 본문 HTML → 텍스트 =====
 // 상세페이지 본문에서 텍스트만 추출 (이미지·스크립트 제외). 프롬프트 참고용.
 function htmlToText(html) {
@@ -229,6 +277,8 @@ module.exports = {
   extractExplicitMaterial,
   buildSystemPrompt,
   callGemini,
+  callOllama,
+  generateWithFallback,
   parseCandidates,
   htmlToText,
 };
