@@ -2363,10 +2363,14 @@ app.post('/api/review-reply', async (req, res) => {
     if (productName) userParts.push(`상품명: ${productName}`);
     if (option) userParts.push(`구매 옵션: ${option}`);
     if (rating) userParts.push(`별점: ${rating}점`);
-    userParts.push(`리뷰 내용:\n${cleanReview}`);
+    // 신체 언급 차단 ①: 프롬프트에는 신체 관련 문장을 뺀 리뷰를 전달 (이력 DB에는 원문 저장)
+    const promptReview = reviewReply.stripBodyMentions(cleanReview) || cleanReview;
+    userParts.push(`리뷰 내용:\n${promptReview}`);
 
     const gen = await reviewReply.generateWithFallback(cfg, prompts, userParts.join('\n'));
-    const candidates = gen.candidates;
+    // 신체 언급 차단 ②: 신체 단어가 포함된 후보 탈락 (전부 탈락하면 원본 유지)
+    const safeCandidates = gen.candidates.filter(c => !reviewReply.containsBodyMention(c));
+    const candidates = safeCandidates.length > 0 ? safeCandidates : gen.candidates;
 
     // 이력 저장 (중복 답글 방지·사용량 통계용)
     await query(

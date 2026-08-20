@@ -29,6 +29,42 @@ function sanitizeReviewText(text) {
     .slice(0, 2000);
 }
 
+// ===== 신체 언급 2중 차단 =====
+// 소형 모델은 "언급 금지" 프롬프트 지시를 어기므로 코드에서 차단:
+// ① 입력: 리뷰의 신체 관련 문장을 프롬프트 전송 전에 제거 (되풀이 원천 차단)
+// ② 출력: 생성된 후보 중 신체 단어 포함 후보 자동 탈락
+// 주의: '배송'과 '배가/배는/배를'을 구분 (조사 결합형만 매칭)
+const BODY_WORD_RE = /(뱃살|몸매|체형|팔뚝|허벅지|종아리|골반|엉덩이|힙이|힙을|몸무게|하체|상체|가슴이|가슴을|배(?:가|는|를|도)\s|배\s*(?:안\s*)?나오)/;
+
+function containsBodyMention(text) {
+  return BODY_WORD_RE.test(String(text || ''));
+}
+
+function stripBodyMentions(text) {
+  if (!text) return '';
+  return String(text)
+    .split(/(?<=[.!?~])\s+|\n/)
+    .filter(s => !BODY_WORD_RE.test(s))
+    .join(' ')
+    .trim();
+}
+
+// ===== 후보 출력 검증 =====
+// 소형 모델 붕괴 증상 차단: 중국어 이탈(한자), 내부 토큰 누출, 메타 발언, 신체 언급
+const CJK_IDEOGRAPH_RE = /[一-鿿㐀-䶿]/; // 한자 = 중국어 이탈 신호
+const GARBAGE_TOKEN_RE = /(ENDOFMESSAGE|VERTEX|<\/?s>|<\|im_|\[INST\]|\bassistant\s*:|\bsystem\s*:)/i;
+const META_TALK_RE = /(철자가|오타로 이해|입력을 잘못|프롬프트|시스템 메시지|규칙에 따라 작성)/;
+
+function isValidCandidate(text) {
+  const c = String(text || '').trim();
+  if (c.length < 10 || c.length > 800) return false;
+  if (CJK_IDEOGRAPH_RE.test(c)) return false;
+  if (GARBAGE_TOKEN_RE.test(c)) return false;
+  if (META_TALK_RE.test(c)) return false;
+  if (containsBodyMention(c)) return false;
+  return true;
+}
+
 // ===== 소재 추출 =====
 // 지뢰 9: 상품명의 계절 단어(봄/여름)를 소재로 오인 — 명시적 소재 단어만 인정
 const MATERIAL_WORDS = [
@@ -132,7 +168,7 @@ function buildSystemPrompt({ rules, product, rating, productName, pastReplies, s
   // 같은 상품의 다른 구매자 리뷰 — 경향 참고용 (답변 대상 아님)
   // 심층 방어: 호출부에서 정제했더라도 여기서 한 번 더 신체정보·UI 문구 제거
   const otherReviews = (siblingReviews || [])
-    .map(s => s && sanitizeReviewText(s.reviewText))
+    .map(s => s && stripBodyMentions(sanitizeReviewText(s.reviewText)))
     .filter(Boolean);
   if (otherReviews.length > 0) {
     lines.push('');
@@ -242,35 +278,39 @@ async function generateWithFallback(cfg, prompts, userText) {
   if (cfg.geminiKey) {
     try {
       const text = await callGemini(cfg.geminiKey, cfg.model, prompts.multi, userText);
-      const candidates = parseCandidates(text);
+      const candidates = parseCandidates(text).filter(isValidCandidate);
       if (candidates.length > 0) {
         return { candidates, provider: 'gemini:' + (cfg.model || DEFAULT_MODEL) };
       }
-      errors.push('Gemini: 응답에서 후보를 추출하지 못했습니다.');
+      errors.push('Gemini: 유효한 후보를 추출하지 못했습니다.');
     } catch (e) {
       errors.push('Gemini: ' + e.message);
     }
   }
   if (cfg.ollamaUrl && cfg.ollamaModel) {
-    const settled = await Promise.allSettled(
-      OLLAMA_TEMPS.map(t => callOllama(cfg.ollamaUrl, cfg.ollamaKey, cfg.ollamaModel, prompts.single, userText, t))
-    );
+    // 비용 없음 → 검증 통과 후보가 3개 미만이면 한 차례 더 병렬 재생성 (최대 2웨이브)
     const candidates = [];
     const seen = new Set();
-    for (const s of settled) {
-      if (s.status !== 'fulfilled') continue;
-      const c = (parseCandidates(s.value)[0] || String(s.value)).trim();
-      const norm = c.replace(/\s+/g, ' ').trim();
-      if (norm && !seen.has(norm)) {
-        seen.add(norm);
-        candidates.push(c);
+    let lastFail = null;
+    for (let wave = 0; wave < 2 && candidates.length < 3; wave++) {
+      const settled = await Promise.allSettled(
+        OLLAMA_TEMPS.map(t => callOllama(cfg.ollamaUrl, cfg.ollamaKey, cfg.ollamaModel, prompts.single, userText, t + wave * 0.05))
+      );
+      for (const s of settled) {
+        if (s.status !== 'fulfilled') { lastFail = s.reason; continue; }
+        const c = (parseCandidates(s.value)[0] || String(s.value)).trim();
+        if (!isValidCandidate(c)) continue; // 한자·토큰누출·메타발언·신체언급 후보 탈락
+        const norm = c.replace(/\s+/g, ' ').trim();
+        if (!seen.has(norm)) {
+          seen.add(norm);
+          candidates.push(c);
+        }
       }
     }
     if (candidates.length > 0) {
       return { candidates: candidates.slice(0, 5), provider: 'ollama:' + cfg.ollamaModel };
     }
-    const firstFail = settled.find(s => s.status === 'rejected');
-    errors.push('Ollama: ' + (firstFail ? firstFail.reason.message : '유효한 후보 없음'));
+    errors.push('Ollama: ' + (lastFail ? lastFail.message : '검증을 통과한 후보가 없습니다.'));
   }
   throw new Error(errors.length > 0 ? errors.join('\n') : 'AI 제공자(Gemini 또는 Ollama)가 설정되지 않았습니다.');
 }
@@ -308,6 +348,9 @@ function parseCandidates(text) {
 module.exports = {
   DEFAULT_MODEL,
   sanitizeReviewText,
+  containsBodyMention,
+  stripBodyMentions,
+  isValidCandidate,
   extractExplicitMaterial,
   buildSystemPrompt,
   callGemini,
