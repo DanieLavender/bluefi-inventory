@@ -148,8 +148,9 @@ function buildSystemPrompt({ rules, product, rating, productName, pastReplies, s
 
   if (product && product.info) {
     lines.push('');
-    lines.push('## 상품 정보 (DB 조회 결과 — 이 범위에서만 상품을 언급)');
+    lines.push('## 상품 정보 (DB·상품페이지 조회 결과)');
     lines.push(product.info);
+    lines.push('3줄(상품 한마디)에는 위 상품 정보에서 이 리뷰와 맞닿는 구체적 특징 하나를 골라 자연스럽게 활용하세요 (소재·짜임·디테일·관리법·활용도 등). 후보마다 서로 다른 특징을 고르세요. 단, 위 정보에 없는 내용을 지어내는 것은 금지입니다.');
   }
 
   // 같은 상품에 이미 나간 답글들 — 표현 중복 회피 (지뢰 10: 금지 대신 대체 행동 지시)
