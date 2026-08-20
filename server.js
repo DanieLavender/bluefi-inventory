@@ -2196,6 +2196,10 @@ async function fetchNaverProductDetail(productNo) {
     if (!material) material = reviewReply.extractExplicitMaterial(origin.name);
     if (material) lines.push(`소재: ${material}`);
 
+    // 상세페이지 본문 텍스트 (앞 800자) — 본문에만 있는 상품 설명 반영용
+    const bodyText = reviewReply.htmlToText(origin.detailContent || '');
+    if (bodyText) lines.push(`본문 설명: ${bodyText.slice(0, 800)}`);
+
     const info = lines.join('\n');
     await query(
       'INSERT INTO review_product_cache (channel_product_no, info, material, fetched_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE info = VALUES(info), material = VALUES(material), fetched_at = NOW()',

@@ -193,6 +193,27 @@ async function callGemini(apiKey, model, systemPrompt, userText) {
   }
 }
 
+// ===== 상세 본문 HTML → 텍스트 =====
+// 상세페이지 본문에서 텍스트만 추출 (이미지·스크립트 제외). 프롬프트 참고용.
+function htmlToText(html) {
+  if (!html) return '';
+  return String(html)
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
 // ===== 후보 분리 =====
 function parseCandidates(text) {
   return String(text)
@@ -209,4 +230,5 @@ module.exports = {
   buildSystemPrompt,
   callGemini,
   parseCandidates,
+  htmlToText,
 };
