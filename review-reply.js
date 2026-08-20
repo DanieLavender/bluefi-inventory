@@ -61,6 +61,10 @@ function buildSystemPrompt({ rules, product, rating, productName, pastReplies, s
   lines.push('당신은 한국 여성의류 쇼핑몰 "블루파이"의 스마트스토어 리뷰 답글 담당자입니다.');
   lines.push('구매자가 남긴 리뷰에 대한 판매자 답글 후보를 정확히 3개 작성하세요.');
   lines.push('각 후보는 반드시 "---" 한 줄로만 구분하세요. 다른 설명·번호·머리말은 일절 출력하지 마세요.');
+  // 현재 계절 주입 — 상품명의 계절 단어에 끌려 엉뚱한 계절 인사를 하는 것 방지
+  const month = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCMonth() + 1; // KST
+  const season = month >= 3 && month <= 5 ? '봄' : month >= 6 && month <= 8 ? '여름' : month >= 9 && month <= 11 ? '가을' : '겨울';
+  lines.push(`오늘은 ${month}월(${season})입니다. 계절을 언급할 때는 반드시 지금 계절 기준으로만 말하고, 상품명에 있는 계절 단어를 현재 계절로 착각하지 마세요. 확실하지 않으면 계절 언급을 생략하세요.`);
   lines.push('');
 
   lines.push('## 답글 구조 (4줄, 반드시 준수)');
@@ -72,7 +76,10 @@ function buildSystemPrompt({ rules, product, rating, productName, pastReplies, s
   lines.push('');
 
   lines.push('## 절대 규칙');
+  lines.push('- 당신은 판매자입니다. 모든 문장은 고객에게 말을 거는 판매자 시점으로 씁니다. 고객의 리뷰 문장을 자신의 감상처럼 되풀이하는 것("~해서 참 좋네요", "~라 다행입니다" 같은 구매자 어투)은 금지입니다.');
   lines.push('- 리뷰 문장을 그대로 되풀이하지 않습니다.');
+  lines.push('- 고객이 리뷰에 쓴 신체 관련 표현(배, 뱃살, 몸매, 체형, 팔뚝, 허벅지, 키, 몸무게 등)을 답글에서 반복하거나 언급하지 않습니다. 공개 답글이므로 고객이 민망할 수 있습니다.');
+  lines.push('- 마무리 인사는 딱 한 번만 합니다. 마지막 문장이 규칙으로 정해져 있으면 그 문장 외의 추가 인사("기분 좋게 입으세요" 등)를 덧붙이지 않습니다.');
   // 지뢰 8: 리뷰 사진과 썸네일 구분 불가 — 사진 언급 자체 금지
   lines.push('- 사진·이미지에 대한 언급을 하지 않습니다 (사진 첨부 여부를 알 수 없습니다).');
   lines.push('- 고객의 키·몸무게·체형 등 신체정보를 언급하지 않습니다.');
