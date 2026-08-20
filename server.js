@@ -2172,8 +2172,14 @@ async function fetchNaverProductDetail(productNo) {
     if (!origin || !origin.name) return null;
 
     const lines = [`상품명: ${origin.name}`];
-    // 의류 상품정보제공고시의 소재 (판매자가 등록 시 입력한 값 — 가장 신뢰도 높음)
+    // 상세페이지 본문 텍스트 — 소재 파싱과 프롬프트 참고에 사용
+    const bodyText = reviewReply.htmlToText(origin.detailContent || '');
+
+    // 소재 결정 순서: 고시(참조류 제외) → 판매자 속성 → 본문 혼용률 → 상품명 명시 단어
+    // 의류 상품정보제공고시의 소재 — 단, "상품상세 참조" 같은 무의미 값은 버림
     let material = origin.detailAttribute?.productInfoProvidedNotice?.wear?.material || null;
+    if (material && /상세|참조|하단|이미지|설명/.test(material)) material = null;
+
     // 판매자 속성 (소재/핏/신축성 등)
     const attrs = origin.detailAttribute?.attributes;
     if (Array.isArray(attrs)) {
@@ -2192,12 +2198,16 @@ async function fetchNaverProductDetail(productNo) {
     if (Array.isArray(tags) && tags.length > 0) {
       lines.push(`태그: ${tags.map(t => (t && t.text) || t).filter(Boolean).slice(0, 10).join(', ')}`);
     }
-    // 고시·속성에 소재가 없으면 상품명의 명시적 소재 단어만 (지뢰 9)
+    // 본문에서 혼용률 파싱 (예: "레이온 60%, 아크릴 30%, 린넨 10%")
+    if (!material && bodyText) {
+      const comp = bodyText.match(/([가-힣a-zA-Z]+\s*\d{1,3}\s*%(?:\s*[,·\/+]?\s*[가-힣a-zA-Z]+\s*\d{1,3}\s*%)*)/);
+      if (comp) material = comp[1].trim().slice(0, 100);
+    }
+    // 마지막 폴백: 상품명의 명시적 소재 단어만 (지뢰 9: 계절어 추측 금지)
     if (!material) material = reviewReply.extractExplicitMaterial(origin.name);
     if (material) lines.push(`소재: ${material}`);
 
-    // 상세페이지 본문 텍스트 (앞 800자) — 본문에만 있는 상품 설명 반영용
-    const bodyText = reviewReply.htmlToText(origin.detailContent || '');
+    // 상세페이지 본문 (앞 800자) — 본문에만 있는 상품 설명 반영용
     if (bodyText) lines.push(`본문 설명: ${bodyText.slice(0, 800)}`);
 
     const info = lines.join('\n');
