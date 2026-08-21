@@ -23,10 +23,22 @@ function sanitizeReviewText(text) {
       if (!t) return false;
       if (BODY_INFO_LINE.test(t)) return false;
       if (UI_NOISE_PATTERNS.some(re => re.test(t))) return false;
+      // 스크래핑이 섞어 넣는 "상품명: ... | 옵션: ..." 머리말 줄 제거
+      if (/^상품명\s*[:：].*옵션\s*[:：]/.test(t)) return false;
       return true;
     })
     .join('\n')
     .slice(0, 2000);
+}
+
+// 구매 옵션 필드 정제 — 판매자센터 화면에서 옵션 옆에 붙는 "유저정보: 체형 159cm..." 신체정보 제거
+// (신체정보는 어떤 경로로도 AI에 전달 금지 — 인수인계 문서 불변 원칙)
+function sanitizeOptionText(text) {
+  if (!text) return '';
+  let t = String(text).split(/유저\s*정보/)[0]; // 유저정보 이후 전부 절단
+  t = t.replace(/(체형|평소\s*사이즈|상의\s*[SML]|어깨|팔길이)[^/\n]*/g, '');
+  t = t.replace(/\d{2,3}\s*cm|\d{2,3}\s*kg/g, '');
+  return t.replace(/\s+/g, ' ').trim().slice(0, 100);
 }
 
 // ===== 신체 언급 2중 차단 =====
@@ -349,6 +361,7 @@ function parseCandidates(text) {
 module.exports = {
   DEFAULT_MODEL,
   sanitizeReviewText,
+  sanitizeOptionText,
   containsBodyMention,
   stripBodyMentions,
   isValidCandidate,

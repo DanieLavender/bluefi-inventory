@@ -2361,7 +2361,9 @@ app.post('/api/review-reply', async (req, res) => {
     };
     const userParts = [];
     if (productName) userParts.push(`상품명: ${productName}`);
-    if (option) userParts.push(`구매 옵션: ${option}`);
+    // 옵션 필드에 화면의 "유저정보: 체형..." 신체정보가 섞여 들어오는 사례 확인 — 서버에서 절단
+    const cleanOption = reviewReply.sanitizeOptionText(option);
+    if (cleanOption) userParts.push(`구매 옵션: ${cleanOption}`);
     if (rating) userParts.push(`별점: ${rating}점`);
     // 신체 언급 차단 ①: 프롬프트에는 신체 관련 문장을 뺀 리뷰를 전달 (이력 DB에는 원문 저장)
     const promptReview = reviewReply.stripBodyMentions(cleanReview) || cleanReview;
