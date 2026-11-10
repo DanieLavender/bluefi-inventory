@@ -4,7 +4,7 @@ const path = require('path');
 const { getPool, initDb, query } = require('./database');
 const { scheduler } = require('./sync-scheduler');
 const { NaverCommerceClient } = require('./smartstore');
-const { CoupangClient } = require('./coupang');
+const { CoupangClient, summarizeRaw } = require('./coupang');
 const reviewReply = require('./review-reply');
 const { ZigzagClient } = require('./zigzag');
 const webpush = require('web-push');
@@ -1498,6 +1498,14 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         console.log(`[Returnable] 쿠팡 클라이언트 초기화 성공, 반품 조회 시작 (${Math.round(hours/24)}일)...`);
         const coupangReturns = await coupangClient.getReturnRequests(coupangFrom.toISOString(), now.toISOString());
         console.log(`[Returnable] 쿠팡: ${coupangReturns.length}건 감지`);
+        // 진단(debug=1): 첫 반품의 주문번호로 주문 정보를 조회해 이름 칸 유무 확인 (개인정보 마스킹)
+        let _orderSheetProbe;
+        if (req.query.debug === '1' && coupangReturns[0]) {
+          try {
+            const os = await coupangClient.getOrderSheetsByOrderId(coupangReturns[0].orderId);
+            _orderSheetProbe = summarizeRaw(os);
+          } catch (e) { _orderSheetProbe = { error: String(e.message).slice(0, 300) }; }
+        }
         // 상태별 분포 로깅
         const cDist = {};
         for (const r of coupangReturns) { cDist[r.receiptStatus] = (cDist[r.receiptStatus] || 0) + 1; }
@@ -1573,7 +1581,7 @@ app.get('/api/sync/returnable-items', async (req, res) => {
               sellerProductItemName: ri.sellerProductItemName || '',
               colorOptions: parsed.colorOptions || [],
               sizeOptions: parsed.sizeOptions || [],
-              ...(req.query.debug === '1' ? { _rawSummary: ret._rawSummary } : {}),
+              ...(req.query.debug === '1' ? { _rawSummary: ret._rawSummary, _orderSheetProbe } : {}),
             });
           }
         }

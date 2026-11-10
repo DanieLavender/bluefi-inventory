@@ -105,6 +105,12 @@ class CoupangClient {
     return `${y}-${m}-${day}`;
   }
 
+  // === 주문번호로 단건 주문 조회 (orderId 기준) ===
+  async getOrderSheetsByOrderId(orderId) {
+    const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.vendorId}/${orderId}/ordersheets`;
+    return this.apiCall('GET', path);
+  }
+
   // === 주문 조회 (아이템 단위 평탄화) ===
 
   async getOrderItems(fromDate, toDate) {
@@ -421,4 +427,4 @@ class CoupangClient {
   }
 }
 
-module.exports = { CoupangClient };
+module.exports = { CoupangClient, summarizeRaw };
