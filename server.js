@@ -1545,6 +1545,20 @@ app.get('/api/sync/returnable-items', async (req, res) => {
           try {
             const os = await coupangClient.getOrderSheetsByOrderId(coupangReturns[0].orderId);
             _orderSheetProbe = summarizeRaw(os, 0, 5);
+            // 새 버전 API 확인: 반품 v6 · 발주서 v5 (이름 칸 유무)
+            const vid = coupangClient.vendorId;
+            const r0 = coupangReturns[0];
+            const fmt = d => coupangClient.formatCoupangDate(d);
+            const probes = {
+              ret_v6: `/v2/providers/openapi/apis/api/v6/vendors/${vid}/returnRequests?` + new URLSearchParams({ createdAtFrom: fmt(new Date(Date.now() - 7 * 864e5)), createdAtTo: fmt(new Date()), status: 'UC', searchType: 'timeFrame' }),
+              ret_v6_noType: `/v2/providers/openapi/apis/api/v6/vendors/${vid}/returnRequests?` + new URLSearchParams({ createdAtFrom: fmt(new Date(Date.now() - 7 * 864e5)), createdAtTo: fmt(new Date()), status: 'UC' }),
+              ret_v6_one: `/v2/providers/openapi/apis/api/v6/vendors/${vid}/returnRequests/${r0.receiptId}`,
+              os_v5: `/v2/providers/openapi/apis/api/v5/vendors/${vid}/${r0.orderId}/ordersheets`,
+            };
+            for (const [k, path] of Object.entries(probes)) {
+              try { const r = await coupangClient.apiCall('GET', path); const d = r && r.data; const one = Array.isArray(d) ? d[0] : d; _orderSheetProbe[k] = summarizeRaw(one, 0, 4); }
+              catch (e) { _orderSheetProbe[k] = { error: String(e.message).slice(0, 200) }; }
+            }
           } catch (e) { _orderSheetProbe = { error: String(e.message).slice(0, 300) }; }
         }
         // 상태별 분포 로깅
