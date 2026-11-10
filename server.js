@@ -1520,6 +1520,25 @@ app.get('/api/sync/returnable-items', async (req, res) => {
             _nameStoreCount = Number(c[0].n);
           }
         } catch (e) { console.log('[Returnable] 쿠팡 이름 보충 실패:', e.message); }
+        // 그래도 이름이 없으면 안심번호 + 수거 송장번호를 표시 (쿠팡이 이름을 안 주므로)
+        try {
+          const lookupIds = [...new Set(coupangReturns.filter(r => !r.buyerName && r.orderId).map(r => String(r.orderId)))].slice(0, 60);
+          const safeMap = {};
+          for (const oid of lookupIds) {
+            const wasCached = coupangSafeNumberCache.has(oid);
+            safeMap[oid] = await getCoupangSafeNumber(coupangClient, oid);
+            if (!wasCached) await new Promise(r => setTimeout(r, 120));
+          }
+          for (const r of coupangReturns) {
+            if (r.buyerName) continue;
+            const parts = [];
+            const safe = safeMap[String(r.orderId)];
+            if (safe) parts.push(`안심 ${safe}`);
+            if (r.returnInvoiceNo) parts.push(`송장 ${r.returnInvoiceNo}`);
+            if (parts.length) r.buyerName = parts.join(' · ');
+          }
+          console.log(`[Returnable] 쿠팡 안심번호 조회 ${lookupIds.length}건, 확보 ${Object.values(safeMap).filter(Boolean).length}건`);
+        } catch (e) { console.log('[Returnable] 쿠팡 안심번호 보충 실패:', e.message); }
         // 진단(debug=1): 첫 반품의 주문번호로 주문 정보를 조회해 이름 칸 유무 확인 (개인정보 마스킹)
         let _orderSheetProbe;
         if (req.query.debug === '1' && coupangReturns[0]) {
@@ -3503,6 +3522,25 @@ async function initSyncClients() {
       }
     } catch (e) { console.log('[Sync] 지그재그 클라이언트 초기화 실패:', e.message); }
   }
+}
+
+// 쿠팡 주문번호 → 안심번호 캐시 (반품 목록 조회마다 주문 API를 다시 부르지 않게, 6시간)
+const coupangSafeNumberCache = new Map();
+async function getCoupangSafeNumber(client, orderId) {
+  const key = String(orderId);
+  const hit = coupangSafeNumberCache.get(key);
+  if (hit && Date.now() - hit.at < 6 * 60 * 60 * 1000) return hit.value;
+  let value = '';
+  try {
+    const res = await client.getOrderSheetsByOrderId(key);
+    const sheet = (res && Array.isArray(res.data)) ? res.data[0] : (res && res.data);
+    if (sheet) value = (sheet.orderer && sheet.orderer.safeNumber) || (sheet.receiver && sheet.receiver.safeNumber) || '';
+  } catch (e) {
+    console.log(`[Returnable] 쿠팡 안심번호 조회 실패 orderId=${key}: ${String(e.message).slice(0, 120)}`);
+    return '';  // 실패는 캐시하지 않음
+  }
+  coupangSafeNumberCache.set(key, { value, at: Date.now() });
+  return value;
 }
 
 async function initCoupangClient() {

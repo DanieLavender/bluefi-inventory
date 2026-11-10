@@ -246,6 +246,8 @@ class CoupangClient {
             receiptStatus: ret.receiptStatus || status,
             releaseStopStatus: ret.releaseStopStatus || '',
             buyerName: ret.buyerName || ret.ordererName || ret.requesterName || '',
+            // 반품 수거 송장번호 (들어온 상자와 맞춰 보는 용도)
+            returnInvoiceNo: ((ret.returnDeliveryDtos || []).map(d => d && d.deliveryInvoiceNo).filter(Boolean)[0]) || '',
             returnItems: (ret.returnItems || []).map(item => ({
               vendorItemId: String(item.vendorItemId || ''),
               vendorItemName: item.vendorItemName || '',
