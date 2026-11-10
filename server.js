@@ -1503,7 +1503,7 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         if (req.query.debug === '1' && coupangReturns[0]) {
           try {
             const os = await coupangClient.getOrderSheetsByOrderId(coupangReturns[0].orderId);
-            _orderSheetProbe = summarizeRaw(os);
+            _orderSheetProbe = summarizeRaw(os, 0, 5);
           } catch (e) { _orderSheetProbe = { error: String(e.message).slice(0, 300) }; }
         }
         // 상태별 분포 로깅
