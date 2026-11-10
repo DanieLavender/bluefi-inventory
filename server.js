@@ -1520,25 +1520,24 @@ app.get('/api/sync/returnable-items', async (req, res) => {
             _nameStoreCount = Number(c[0].n);
           }
         } catch (e) { console.log('[Returnable] 쿠팡 이름 보충 실패:', e.message); }
-        // 그래도 이름이 없으면 안심번호 + 수거 송장번호를 표시 (쿠팡이 이름을 안 주므로)
+        // 쿠팡이 이름을 안 주므로: 사장님이 직접 입력한 이름 + 수거 송장번호를 표시
         try {
-          const lookupIds = [...new Set(coupangReturns.filter(r => !r.buyerName && r.orderId).map(r => String(r.orderId)))].slice(0, 60);
-          const safeMap = {};
-          for (const oid of lookupIds) {
-            const wasCached = coupangSafeNumberCache.has(oid);
-            safeMap[oid] = await getCoupangSafeNumber(coupangClient, oid);
-            if (!wasCached) await new Promise(r => setTimeout(r, 120));
+          const keys = [...new Set(coupangReturns.map(r => `CPG_RET_${r.receiptId}`))];
+          const manual = {};
+          if (keys.length > 0) {
+            const rows = await query(`SELECT return_key, buyer_name FROM return_buyer_names WHERE return_key IN (${keys.map(() => '?').join(',')})`, keys);
+            for (const row of rows) manual[row.return_key] = row.buyer_name;
           }
           for (const r of coupangReturns) {
-            if (r.buyerName) continue;
+            const m = manual[`CPG_RET_${r.receiptId}`];
+            if (m) { r.buyerName = m; r._manualName = true; }
+            if (!r._manualName && r.buyerName) continue;  // 쿠팡이 이름을 준 경우
             const parts = [];
-            const safe = safeMap[String(r.orderId)];
-            if (safe) parts.push(`안심 ${safe}`);
+            if (r.buyerName) parts.push(r.buyerName);
             if (r.returnInvoiceNo) parts.push(`송장 ${r.returnInvoiceNo}`);
-            if (parts.length) r.buyerName = parts.join(' · ');
+            r.buyerName = parts.join(' · ');
           }
-          console.log(`[Returnable] 쿠팡 안심번호 조회 ${lookupIds.length}건, 확보 ${Object.values(safeMap).filter(Boolean).length}건`);
-        } catch (e) { console.log('[Returnable] 쿠팡 안심번호 보충 실패:', e.message); }
+        } catch (e) { console.log('[Returnable] 쿠팡 이름 표시 보충 실패:', e.message); }
         // 진단(debug=1): 첫 반품의 주문번호로 주문 정보를 조회해 이름 칸 유무 확인 (개인정보 마스킹)
         let _orderSheetProbe;
         if (req.query.debug === '1' && coupangReturns[0]) {
@@ -1644,6 +1643,7 @@ app.get('/api/sync/returnable-items', async (req, res) => {
               ordererName: ret.buyerName || '',
               _parsed: parsed,
               sellerProductItemName: ri.sellerProductItemName || '',
+              buyerNameManual: !!ret._manualName,
               colorOptions: parsed.colorOptions || [],
               sizeOptions: parsed.sizeOptions || [],
               ...(req.query.debug === '1' ? { _rawSummary: ret._rawSummary, _orderSheetProbe, _nameStoreCount } : {}),
@@ -2584,6 +2584,31 @@ app.post('/api/returns/confirm-pickup', async (req, res) => {
   }
 });
 
+// 반품 묶음 키: 쿠팡 CPG_RET_<접수번호>_<아이템> → CPG_RET_<접수번호> (한 반품의 여러 상품이 같은 이름을 쓴다)
+function returnKeyOf(productOrderId) {
+  const id = String(productOrderId || '');
+  if (id.startsWith('CPG_RET_')) return id.split('_').slice(0, 3).join('_');
+  return id;
+}
+
+// PUT /api/returns/buyer-name - 반품자 이름 직접 입력 (쿠팡이 이름을 안 줄 때). 빈 값이면 삭제
+app.put('/api/returns/buyer-name', async (req, res) => {
+  try {
+    const { productOrderId, name } = req.body || {};
+    const key = returnKeyOf(productOrderId);
+    if (!key) return res.status(400).json({ error: '반품 건을 찾을 수 없습니다.' });
+    const clean = String(name || '').trim().slice(0, 100);
+    if (clean) {
+      await query('INSERT INTO return_buyer_names (return_key, buyer_name) VALUES (?, ?) ON DUPLICATE KEY UPDATE buyer_name = VALUES(buyer_name)', [key, clean]);
+    } else {
+      await query('DELETE FROM return_buyer_names WHERE return_key = ?', [key]);
+    }
+    res.json({ success: true, returnKey: key, name: clean });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/returns/confirmed - 실수거완료 리스트 (재고 추가 여부 포함)
 // ?finalized=true → 최종완료된 건만, ?finalized=false → 미완료 건만 (기본), 생략 → 전체
 app.get('/api/returns/confirmed', async (req, res) => {
@@ -2610,6 +2635,20 @@ app.get('/api/returns/confirmed', async (req, res) => {
         if (row.type === 'inventory_update') inventoryIds.add(row.product_order_id);
         if (row.type === 'qty_increase' || row.type === 'product_create') storeIds.add(row.product_order_id);
       }
+    }
+
+    // 쿠팡 반품: 직접 입력한 이름이 있으면 그것으로 표시
+    const manualNames = {};
+    try {
+      const keys = [...new Set(rows.map(r => returnKeyOf(r.product_order_id)).filter(k => k.startsWith('CPG_RET_')))];
+      if (keys.length > 0) {
+        const nrows = await query(`SELECT return_key, buyer_name FROM return_buyer_names WHERE return_key IN (${keys.map(() => '?').join(',')})`, keys);
+        for (const n of nrows) manualNames[n.return_key] = n.buyer_name;
+      }
+    } catch (e) { console.log('[Confirmed] 이름 보충 실패:', e.message); }
+    for (const r of rows) {
+      const m = manualNames[returnKeyOf(r.product_order_id)];
+      if (m) { r.orderer_name = m; r.buyer_name_manual = true; }
     }
 
     const items = rows.map(r => ({

@@ -95,6 +95,14 @@ async function initDb() {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS return_buyer_names (
+      return_key VARCHAR(64) PRIMARY KEY,
+      buyer_name VARCHAR(100) NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS coupang_order_names (
       order_id VARCHAR(64) PRIMARY KEY,
       orderer_name VARCHAR(100) DEFAULT NULL,

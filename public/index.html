@@ -413,6 +413,24 @@
             font-size: 11px;
             white-space: nowrap;
         }
+        .return-name-edit {
+            border: 1px dashed var(--border, #D4D4D8);
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .return-name-edit:hover { color: var(--accent); border-color: var(--accent); }
+        .return-name-input {
+            font-size: 12px;
+            padding: 2px 6px;
+            width: 90px;
+            border: 1px solid var(--accent);
+            border-radius: 4px;
+        }
         .return-item-date {
             color: var(--text-muted);
             font-size: 11px;
@@ -4444,7 +4462,7 @@
                     const sizeText = size ? ` · ${size}` : '';
                     const dateStr = item.lastChangedDate ? new Date(item.lastChangedDate).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : '';
 
-                    const buyerName = item.ordererName ? `<span class="return-item-buyer">${escapeHtml(item.ordererName)}</span>` : '';
+                    const buyerName = buyerNameHtml(item.productOrderId, item.store, item.ordererName, item.buyerNameManual);
 
                     // 버튼 분기
                     const added = item.alreadyAdded;
@@ -4539,6 +4557,50 @@
             document.getElementById('inputProductOrderId').value = productOrderId;
             document.getElementById('inputChannelProductNo').value = item.channelProductNo || '';
         }, 50);
+    }
+
+    // ===== 반품자 이름 직접 입력 (쿠팡은 API가 이름을 안 줌) =====
+    function buyerNameHtml(productOrderId, store, shownName, isManual) {
+        const span = shownName ? `<span class="return-item-buyer" data-buyer-for="${escapeHtml(productOrderId)}">${escapeHtml(shownName)}</span>` : '';
+        if (store !== 'C') return span;
+        const label = isManual ? '✎' : '✎ 이름';
+        const title = isManual ? '이름 수정' : '반품자 이름 입력';
+        return `${span}<button type="button" class="return-name-edit" title="${title}" onclick="editBuyerName('${escapeHtml(productOrderId)}', this)">${label}</button>`;
+    }
+
+    function editBuyerName(productOrderId, btnEl) {
+        const span = btnEl.parentElement.querySelector(`[data-buyer-for="${CSS.escape(productOrderId)}"]`);
+        const current = span ? span.textContent.split(' · ').filter(t => !t.startsWith('송장 ')).join(' · ') : '';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'return-name-input';
+        input.placeholder = '반품자 이름';
+        input.maxLength = 100;
+        input.value = current;
+        btnEl.replaceWith(input);
+        input.focus();
+        let done = false;
+        const finish = async (save) => {
+            if (done) return;
+            done = true;
+            const value = input.value.trim();
+            if (save && value !== current) {
+                try {
+                    await api('/api/returns/buyer-name', { method: 'PUT', body: JSON.stringify({ productOrderId, name: value }) });
+                    showToast(value ? '반품자 이름을 저장했습니다.' : '반품자 이름을 지웠습니다.', 'success');
+                    if (_returnsLoadedOnce) fetchRecentReturns(); else fetchConfirmedReturns();
+                    return;
+                } catch (e) {
+                    showToast('이름 저장 실패: ' + e.message, 'error');
+                }
+            }
+            input.replaceWith(btnEl);
+        };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+            else if (e.key === 'Escape') { finish(false); }
+        });
+        input.addEventListener('blur', () => finish(true));
     }
 
     // ===== 실수거완료 처리 =====
@@ -4720,7 +4782,7 @@
                     btnHtml = `<button class="return-cancel-btn" onclick="cancelConfirmPickup('${item.product_order_id}', this)" title="실수거완료 취소">✕</button><button class="return-add-btn" onclick="addFromConfirmedReturn('${item.product_order_id}', this)">+ 추가</button>`;
                 }
 
-                const buyerName = item.orderer_name ? `<span class="return-item-buyer">${escapeHtml(item.orderer_name)}</span>` : '';
+                const buyerName = buyerNameHtml(item.product_order_id, item.store, item.orderer_name, item.buyer_name_manual);
 
                 html += `<div class="${rowClass}" data-order-id="${item.product_order_id}">
                     <div class="return-item-info">
@@ -4846,7 +4908,7 @@
                 const sizeText = size ? ` · ${size}` : '';
                 const finalizedStr = item.finalized_at ? new Date(item.finalized_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
-                const buyerName = item.orderer_name ? `<span class="return-item-buyer">${escapeHtml(item.orderer_name)}</span>` : '';
+                const buyerName = buyerNameHtml(item.product_order_id, item.store, item.orderer_name, item.buyer_name_manual);
 
                 html += `<div class="return-item-row return-item-added" data-order-id="${item.product_order_id}">
                     <div class="return-item-info">
