@@ -2,6 +2,23 @@ const crypto = require('crypto');
 
 const COUPANG_API_BASE = 'https://api-gateway.coupang.com';
 
+// 응답 구조 진단용 요약 — 개인정보(이름·전화·주소)는 첫 글자만 남기고 가린다
+function summarizeRaw(obj, depth = 0) {
+  if (obj == null) return null;
+  if (Array.isArray(obj)) return obj.length ? [summarizeRaw(obj[0], depth + 1)] : [];
+  if (typeof obj !== 'object') return typeof obj;
+  if (depth > 2) return '{...}';
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (/name|phone|addr|tel|zip/i.test(k) && (typeof v === 'string' || v == null)) {
+      out[k] = v == null ? 'null' : v === '' ? '(빈값)' : v[0] + '*'.repeat(Math.max(0, v.length - 1));
+    } else {
+      out[k] = summarizeRaw(v, depth + 1);
+    }
+  }
+  return out;
+}
+
 class CoupangClient {
   constructor(accessKey, secretKey, vendorId, storeName = 'Coupang') {
     this.accessKey = accessKey;
@@ -228,6 +245,8 @@ class CoupangClient {
               _raw: item,
             })),
             createdAt: ret.createdAt || '',
+            // 진단용: 응답 칸 이름 + 이름/연락처류 값은 첫 글자만 (개인정보 마스킹)
+            _rawSummary: summarizeRaw(ret),
           });
         }
 

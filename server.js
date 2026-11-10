@@ -1573,6 +1573,7 @@ app.get('/api/sync/returnable-items', async (req, res) => {
               sellerProductItemName: ri.sellerProductItemName || '',
               colorOptions: parsed.colorOptions || [],
               sizeOptions: parsed.sizeOptions || [],
+              ...(req.query.debug === '1' ? { _rawSummary: ret._rawSummary } : {}),
             });
           }
         }
