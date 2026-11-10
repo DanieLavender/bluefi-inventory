@@ -95,6 +95,15 @@ async function initDb() {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS coupang_order_names (
+      order_id VARCHAR(64) PRIMARY KEY,
+      orderer_name VARCHAR(100) DEFAULT NULL,
+      receiver_name VARCHAR(100) DEFAULT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS sales_orders (
       id INT AUTO_INCREMENT PRIMARY KEY,
       store CHAR(1) NOT NULL,
@@ -878,4 +887,17 @@ async function seedData() {
   );
 }
 
-module.exports = { getPool, initDb, query };
+// 쿠팡은 배송 완료 후 이름을 지우므로, 주문 수집 시점에 이름을 저장해 두고 반품 때 주문번호로 찾는다.
+// 빈 이름으로는 기존 이름을 덮지 않는다.
+async function saveCoupangOrderName(orderId, ordererName, receiverName) {
+  if (!orderId || (!ordererName && !receiverName)) return;
+  await query(
+    `INSERT INTO coupang_order_names (order_id, orderer_name, receiver_name) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       orderer_name = COALESCE(NULLIF(VALUES(orderer_name), ''), orderer_name),
+       receiver_name = COALESCE(NULLIF(VALUES(receiver_name), ''), receiver_name)`,
+    [String(orderId), ordererName || null, receiverName || null]
+  );
+}
+
+module.exports = { getPool, initDb, query, saveCoupangOrderName };

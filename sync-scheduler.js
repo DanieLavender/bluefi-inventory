@@ -3,7 +3,7 @@ const webpush = require('web-push');
 const { NaverCommerceClient } = require('./smartstore');
 const { CoupangClient } = require('./coupang');
 const { ZigzagClient } = require('./zigzag');
-const { query } = require('./database');
+const { query, saveCoupangOrderName } = require('./database');
 
 class SyncScheduler {
   constructor() {
@@ -1155,6 +1155,7 @@ class SyncScheduler {
                 );
                 if (insertResult.affectedRows > 0) inserted++;
               } catch (dbErr) { }
+              try { await saveCoupangOrderName(item.orderId, item.ordererName, item.receiverName); } catch (e) { }
             }
           } catch (chunkErr) {
             console.log('[Sales] Coupang 청크 오류:', chunkErr.message);

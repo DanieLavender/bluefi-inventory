@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const { getPool, initDb, query } = require('./database');
+const { getPool, initDb, query, saveCoupangOrderName } = require('./database');
 const { scheduler } = require('./sync-scheduler');
 const { NaverCommerceClient } = require('./smartstore');
 const { CoupangClient, summarizeRaw } = require('./coupang');
@@ -1287,6 +1287,7 @@ app.post('/api/sales/fetch', async (req, res) => {
                 );
                 if (insertResult.affectedRows > 0) storeInserted++;
               } catch (dbErr) { }
+              try { await saveCoupangOrderName(item.orderId, item.ordererName, item.receiverName); } catch (e) { }
             }
           } catch (chunkErr) {
             errors.push(`Coupang: ${chunkErr.message}`);
@@ -1498,6 +1499,27 @@ app.get('/api/sync/returnable-items', async (req, res) => {
         console.log(`[Returnable] 쿠팡 클라이언트 초기화 성공, 반품 조회 시작 (${Math.round(hours/24)}일)...`);
         const coupangReturns = await coupangClient.getReturnRequests(coupangFrom.toISOString(), now.toISOString());
         console.log(`[Returnable] 쿠팡: ${coupangReturns.length}건 감지`);
+        // 쿠팡 반품 API는 이름을 안 준다 → 주문 수집 때 저장해 둔 이름을 주문번호로 찾아 채운다
+        let _nameStoreCount;
+        try {
+          const needIds = [...new Set(coupangReturns.filter(r => !r.buyerName && r.orderId).map(r => String(r.orderId)))];
+          if (needIds.length > 0) {
+            const rows = await query(
+              `SELECT order_id, orderer_name, receiver_name FROM coupang_order_names WHERE order_id IN (${needIds.map(() => '?').join(',')})`,
+              needIds
+            );
+            const nameMap = {};
+            for (const row of rows) nameMap[row.order_id] = row.orderer_name || row.receiver_name || '';
+            for (const r of coupangReturns) {
+              if (!r.buyerName && nameMap[String(r.orderId)]) r.buyerName = nameMap[String(r.orderId)];
+            }
+            console.log(`[Returnable] 쿠팡 이름 보충: ${rows.length}/${needIds.length}건`);
+          }
+          if (req.query.debug === '1') {
+            const c = await query('SELECT COUNT(*) AS n FROM coupang_order_names');
+            _nameStoreCount = Number(c[0].n);
+          }
+        } catch (e) { console.log('[Returnable] 쿠팡 이름 보충 실패:', e.message); }
         // 진단(debug=1): 첫 반품의 주문번호로 주문 정보를 조회해 이름 칸 유무 확인 (개인정보 마스킹)
         let _orderSheetProbe;
         if (req.query.debug === '1' && coupangReturns[0]) {
@@ -1581,7 +1603,7 @@ app.get('/api/sync/returnable-items', async (req, res) => {
               sellerProductItemName: ri.sellerProductItemName || '',
               colorOptions: parsed.colorOptions || [],
               sizeOptions: parsed.sizeOptions || [],
-              ...(req.query.debug === '1' ? { _rawSummary: ret._rawSummary, _orderSheetProbe } : {}),
+              ...(req.query.debug === '1' ? { _rawSummary: ret._rawSummary, _orderSheetProbe, _nameStoreCount } : {}),
             });
           }
         }

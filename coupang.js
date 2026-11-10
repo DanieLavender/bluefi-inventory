@@ -170,6 +170,9 @@ class CoupangClient {
                 totalAmount: (Number(unitPrice) || 0) * qty,
                 status: orderStatus,
                 channelProductNo: vendorItemId,
+                orderId: String(order.orderId || ''),
+                ordererName: (order.orderer && order.orderer.name) || '',
+                receiverName: (order.receiver && order.receiver.name) || '',
               });
             }
           }
