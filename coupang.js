@@ -57,7 +57,7 @@ class CoupangClient {
 
   // === API 호출 (429 재시도 포함) ===
 
-  async apiCall(method, path, body = null, retryCount = 0) {
+  async apiCall(method, path, body = null, retryCount = 0, headerOverride = null) {
     const url = `${COUPANG_API_BASE}${path}`;
     const authorization = this.buildAuthHeader(method, path);
 
@@ -69,6 +69,11 @@ class CoupangClient {
         'X-Requested-By': 'bluefi-inventory',
       },
     };
+    if (headerOverride) {
+      for (const [k, v] of Object.entries(headerOverride)) {
+        if (v === null) delete options.headers[k]; else options.headers[k] = v;
+      }
+    }
     if (body) {
       options.body = JSON.stringify(body);
     }
@@ -79,7 +84,7 @@ class CoupangClient {
       const delay = Math.pow(2, retryCount) * 1000;
       console.log(`[${this.storeName}] Rate limited, ${delay}ms 후 재시도...`);
       await this.sleep(delay);
-      return this.apiCall(method, path, body, retryCount + 1);
+      return this.apiCall(method, path, body, retryCount + 1, headerOverride);
     }
 
     if (!res.ok) {

@@ -1555,6 +1555,16 @@ app.get('/api/sync/returnable-items', async (req, res) => {
               ret_v6_one: `/v2/providers/openapi/apis/api/v6/vendors/${vid}/returnRequests/${r0.receiptId}`,
               os_v5: `/v2/providers/openapi/apis/api/v5/vendors/${vid}/${r0.orderId}/ordersheets`,
             };
+            // 머리말 비교: 같은 반품 1건을 X-Requested-By 없이 / 판매자코드로 / 지금처럼
+            const onePath = probes.ret_v6_one;
+            for (const [k, hdr] of Object.entries({ hdr_none: { 'X-Requested-By': null }, hdr_vendor: { 'X-Requested-By': vid }, hdr_current: null })) {
+              try { const r = await coupangClient.apiCall('GET', onePath, null, 0, hdr); const d = r && r.data; const one = Array.isArray(d) ? d[0] : d; _orderSheetProbe[k] = summarizeRaw(one, 0, 2); }
+              catch (e) { _orderSheetProbe[k] = { error: String(e.message).slice(0, 200) }; }
+            }
+            for (const [k, hdr] of Object.entries({ os_hdr_none: { 'X-Requested-By': null }, os_hdr_vendor: { 'X-Requested-By': vid } })) {
+              try { const r = await coupangClient.apiCall('GET', probes.os_v5, null, 0, hdr); const d = r && r.data; const one = Array.isArray(d) ? d[0] : d; _orderSheetProbe[k] = summarizeRaw(one, 0, 3); }
+              catch (e) { _orderSheetProbe[k] = { error: String(e.message).slice(0, 200) }; }
+            }
             for (const [k, path] of Object.entries(probes)) {
               try { const r = await coupangClient.apiCall('GET', path); const d = r && r.data; const one = Array.isArray(d) ? d[0] : d; _orderSheetProbe[k] = summarizeRaw(one, 0, 4); }
               catch (e) { _orderSheetProbe[k] = { error: String(e.message).slice(0, 200) }; }
